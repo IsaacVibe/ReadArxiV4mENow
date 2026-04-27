@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
@@ -55,3 +56,7 @@ export default tseslint.config({
   },
 })
 ```
+=======
+# ReadArxiV4mENow
+vibe-coding project: LLM-powered arxiv reading app
+>>>>>>> ba7e5e85ee23af1943948b102462804b0788f86a
