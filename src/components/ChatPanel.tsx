@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore, ChatMessage } from '../store/useStore';
-import { Send, Bot, User, Cpu, Loader2, Info, Sparkles, X } from 'lucide-react';
+import { Send, Bot, User, Cpu, Loader2, Info, Sparkles, X, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { callLLM } from '../utils/llm';
 
 export function ChatPanel() {
-  const { messages, addMessage, selectedPapers, togglePaperSelection, clearSelectedPapers, apiKey, baseUrl, model, dailyData } = useStore();
+  const { messages, addMessage, selectedPapers, togglePaperSelection, clearSelectedPapers, apiKey, baseUrl, model, dailyData, updateDailySummary } = useStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [isSummaryOpen, setIsSummaryOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -20,17 +22,11 @@ export function ChatPanel() {
   }, [messages, isLoading]);
 
   const handleDailySummary = async () => {
-    if (!dailyData || isLoading) return;
-    // 去掉强制检查 API Key 的逻辑，因为很多本地模型（如 Ollama）不需要 Key
-    // if (!apiKey) {
-    //   alert('请先在设置中配置 API Key');
-    //   setSettingsOpen(true);
-    //   return;
-    // }
+    if (!dailyData || isGeneratingSummary) return;
 
-    const visibleMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: '💡 一键总结今日概况并推荐亮点文章' };
-    addMessage(visibleMessage);
-    setIsLoading(true);
+    setIsGeneratingSummary(true);
+    setIsSummaryOpen(true);
+    updateDailySummary('');
 
     try {
       const papersContext = dailyData.papers.map((p, i) => `[${i+1}] ${p.title} (arXiv: ${p.url})\n分类: ${p.categories.join(', ')}\n摘要: ${p.summary}`).join('\n\n');
@@ -47,35 +43,49 @@ export function ChatPanel() {
 ${papersContext}`;
 
       const apiMessages = [
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: fixedPrompt },
       ];
 
-      const assistantMessageId = (Date.now() + 1).toString();
-      addMessage({ id: assistantMessageId, role: 'assistant', content: '' });
-
+      let currentSummary = '';
       await callLLM(
         apiMessages as any,
         apiKey,
         baseUrl,
         model,
         (chunk) => {
-          useStore.setState((state) => {
-            const newMessages = [...state.messages];
-            const lastMsg = newMessages[newMessages.length - 1];
-            if (lastMsg.id === assistantMessageId) {
-              lastMsg.content += chunk;
-            }
-            return { messages: newMessages };
-          });
+          currentSummary += chunk;
+          updateDailySummary(currentSummary);
         }
       );
     } catch (error: any) {
       console.error(error);
-      addMessage({ id: Date.now().toString(), role: 'assistant', content: `**Error:** ${error.message}` });
+      updateDailySummary(`**Error:** ${error.message}`);
     } finally {
-      setIsLoading(false);
+      setIsGeneratingSummary(false);
     }
+  };
+
+  const handleExportSummaries = () => {
+    if (!dailyData) return;
+
+    const exportData = {
+      ...dailyData,
+    };
+
+    // 触发下载
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // 生成带日期的文件名
+    const dateStr = dailyData.date ? dailyData.date.replace(/-/g, '') : new Date().toISOString().split('T')[0].replace(/-/g, '');
+    link.download = `RAVEN_Summary_${dateStr}.json`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -156,23 +166,68 @@ arXiv 链接：${paper.url}
               <Bot size={20} />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-slate-200 tracking-wide">AI 学术助手</h2>
+              <h2 className="text-sm font-semibold text-slate-200 tracking-wide">RAVEN AI 助手</h2>
               <p className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
                 <Cpu size={10} /> {model}
               </p>
             </div>
           </div>
           {dailyData && (
-            <button
-              onClick={handleDailySummary}
-              disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Sparkles size={14} />
-              总结今日亮点
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (dailyData.dailySummary && !isGeneratingSummary) {
+                    setIsSummaryOpen(!isSummaryOpen);
+                  } else {
+                    handleDailySummary();
+                  }
+                }}
+                disabled={isGeneratingSummary}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isGeneratingSummary ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {dailyData.dailySummary ? (isSummaryOpen ? '隐藏今日亮点' : '显示今日亮点') : '总结今日亮点'}
+              </button>
+              <button
+                onClick={handleExportSummaries}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-slate-300 text-xs font-medium rounded-lg transition-colors"
+                title="一键导出包含 AI 总结的 JSON 数据文件"
+              >
+                <Download size={14} />
+                <span className="hidden xl:inline">导出总结数据</span>
+              </button>
+            </div>
           )}
         </div>
+
+        <AnimatePresence mode="popLayout">
+          {dailyData?.dailySummary && isSummaryOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="mt-3 p-4 bg-emerald-900/20 border border-emerald-500/20 rounded-xl relative overflow-hidden shrink-0"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium text-emerald-400 flex items-center gap-1.5">
+                  {isGeneratingSummary ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  今日亮点总结
+                </h3>
+                <div className="flex items-center gap-3">
+                  <button onClick={handleDailySummary} disabled={isGeneratingSummary} className="text-emerald-500/70 hover:text-emerald-400 transition-colors text-xs font-medium disabled:opacity-50">
+                    重新生成
+                  </button>
+                  <button onClick={() => setIsSummaryOpen(false)} className="text-emerald-500 hover:text-emerald-300 transition-colors">
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+              <div className="text-sm text-slate-300 prose prose-invert prose-p:leading-relaxed prose-sm max-w-none max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                <ReactMarkdown>{dailyData.dailySummary}</ReactMarkdown>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AnimatePresence mode="popLayout">
           {selectedPapers.length > 0 ? (
@@ -229,7 +284,7 @@ arXiv 链接：${paper.url}
           <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-50">
             <Bot size={48} className="text-slate-400" />
             <div className="space-y-1">
-              <p className="text-sm text-slate-300">你好，我是你的 arXiv 论文解读助手。</p>
+              <p className="text-sm text-slate-300">你好，我是 RAVEN，你的 arXiv 论文解读助手。</p>
               <p className="text-xs text-slate-500 font-mono">你可以让我总结今日最新研究，或者解读特定的论文。</p>
             </div>
           </div>
@@ -304,7 +359,7 @@ arXiv 链接：${paper.url}
           </button>
         </form>
         <div className="text-center mt-2">
-          <span className="text-[10px] text-slate-600 font-mono tracking-widest uppercase">ArXiv LLM Explorer</span>
+          <span className="text-[10px] text-slate-600 font-mono tracking-widest uppercase">RAVEN</span>
         </div>
       </div>
     </div>

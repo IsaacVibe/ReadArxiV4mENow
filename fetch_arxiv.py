@@ -123,7 +123,8 @@ def save_to_markdown_and_json(papers, subjects_counter, latest_date):
     print(f"Successfully saved {len(papers)} papers for {latest_date} to {md_filename}.")
     
     # 保存为 JSON，供前端 Web App 使用
-    json_filename = os.path.join('public', 'papers.json')
+    date_str = datetime.datetime.strptime(latest_date, '%Y-%m-%d').strftime('%Y%m%d')
+    json_filename = os.path.join('public', f'RAVEN_{date_str}.json')
     # 确保 public 目录存在
     os.makedirs('public', exist_ok=True)
     
@@ -137,6 +138,11 @@ def save_to_markdown_and_json(papers, subjects_counter, latest_date):
         json.dump(data, f, ensure_ascii=False, indent=2)
         
     print(f"Successfully saved JSON data to {json_filename}.")
+    
+    # 将最新的文件名写入一个索引文件，供前端应用启动时读取
+    index_filename = os.path.join('public', 'latest.json')
+    with open(index_filename, 'w', encoding='utf-8') as f:
+        json.dump({"latest_file": f'RAVEN_{date_str}.json'}, f)
 
     print("\n" + "="*50)
     print("【下一步操作指南】")

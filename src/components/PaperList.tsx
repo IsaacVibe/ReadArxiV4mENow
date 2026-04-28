@@ -1,11 +1,22 @@
 import { useState, useMemo } from 'react';
 import { useStore, Paper } from '../store/useStore';
-import { Search, Tag, ExternalLink, Calendar, BookOpen } from 'lucide-react';
+import { Search, Tag, ExternalLink, Calendar, BookOpen, Bot, Loader2, CheckSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { callLLM } from '../utils/llm';
 
 export function PaperList() {
-  const { dailyData, selectedPapers, togglePaperSelection } = useStore();
+  const { 
+    dailyData, 
+    selectedPapers, 
+    togglePaperSelection, 
+    selectAllPapers,
+    apiKey, 
+    baseUrl, 
+    model, 
+    updatePaperAiSummary 
+  } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const filteredPapers = useMemo(() => {
     if (!dailyData) return [];
@@ -18,6 +29,54 @@ export function PaperList() {
       );
     });
   }, [dailyData, searchTerm]);
+
+  const groupedPapers = useMemo(() => {
+    const groups: Record<string, Paper[]> = {};
+    filteredPapers.forEach(paper => {
+      const mainCategory = paper.categories[0] || 'Unknown';
+      if (!groups[mainCategory]) {
+        groups[mainCategory] = [];
+      }
+      groups[mainCategory].push(paper);
+    });
+    
+    return Object.keys(groups).sort().map(key => ({
+      category: key,
+      papers: groups[key]
+    }));
+  }, [filteredPapers]);
+
+  const handleGenerateSummaries = async () => {
+    if (isGenerating || selectedPapers.length === 0) return;
+    setIsGenerating(true);
+    
+    try {
+      for (const paper of selectedPapers) {
+        if (paper.aiSummary) continue; // Skip if already generated
+        
+        let currentSummary = '';
+        const prompt = `请用一句简短的中文（或一个短语）总结这篇论文的核心内容。不要有多余的寒暄或解释。\n\n标题：${paper.title}\n摘要：${paper.summary}`;
+        
+        try {
+          await callLLM(
+            [{ role: 'user', content: prompt }],
+            apiKey,
+            baseUrl,
+            model,
+            (chunk) => {
+              currentSummary += chunk;
+              updatePaperAiSummary(paper.url, currentSummary);
+            }
+          );
+        } catch (err) {
+          console.error('Failed to summarize paper', paper.title, err);
+          updatePaperAiSummary(paper.url, currentSummary + ' (总结生成失败)');
+        }
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   if (!dailyData) {
     return (
@@ -41,73 +100,117 @@ export function PaperList() {
           </div>
         </div>
 
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input
-            type="text"
-            placeholder="搜索论文标题、摘要、作者 (如: FRB)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all placeholder:text-slate-600"
-          />
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              placeholder="搜索论文 (如: FRB)"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all placeholder:text-slate-600"
+            />
+          </div>
+          {searchTerm.trim() !== '' && filteredPapers.length > 0 && (
+            <button
+              onClick={() => selectAllPapers(filteredPapers)}
+              className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+              title={`一键选取当前搜索到的 ${filteredPapers.length} 篇论文`}
+            >
+              <CheckSquare size={16} />
+              <span className="hidden xl:inline">全选搜索结果</span>
+            </button>
+          )}
+          <button
+            onClick={handleGenerateSummaries}
+            disabled={isGenerating || selectedPapers.length === 0}
+            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
+              isGenerating || selectedPapers.length === 0
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'
+            }`}
+            title={selectedPapers.length === 0 ? "请先选中论文" : "使用 AI 为已选中的论文生成一句话总结"}
+          >
+            {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
+            <span>{isGenerating ? '生成中...' : `总结已选 (${selectedPapers.length})`}</span>
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {filteredPapers.map((paper, index) => {
-          const isSelected = selectedPapers.some(p => p.url === paper.url);
-          return (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(index * 0.05, 0.5) }}
-              key={paper.url}
-              onClick={() => togglePaperSelection(paper)}
-              className={`group cursor-pointer p-4 rounded-xl border transition-all duration-300 ${
-                isSelected
-                  ? 'bg-slate-900 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.1)]'
-                  : 'bg-slate-900/40 border-slate-800/60 hover:bg-slate-900 hover:border-slate-700'
-              }`}
-            >
-              <h3 className={`text-sm font-semibold leading-relaxed mb-2 line-clamp-2 ${isSelected ? 'text-blue-100' : 'text-slate-200 group-hover:text-blue-200 transition-colors'}`}>
-                {paper.title}
-              </h3>
-              
-              <p className="text-xs text-slate-400 line-clamp-1 mb-3 font-mono">
-                {paper.authors.join(', ')}
-              </p>
-              
-              <div className="flex items-center justify-between mt-auto">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <Tag size={12} className="text-slate-500 shrink-0" />
-                  <div className="flex gap-1 overflow-hidden">
-                    {paper.categories.slice(0, 3).map((cat) => (
-                      <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400 whitespace-nowrap">
-                        {cat}
-                      </span>
-                    ))}
-                    {paper.categories.length > 3 && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-500">
-                        +{paper.categories.length - 3}
-                      </span>
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {groupedPapers.map((group, groupIndex) => (
+          <div key={group.category} className="space-y-3">
+            <div className="sticky top-0 z-10 flex items-center gap-2 bg-slate-950/90 backdrop-blur py-2 border-b border-slate-800/50">
+              <Tag size={14} className="text-blue-400" />
+              <h2 className="text-sm font-mono font-semibold text-slate-300">
+                {group.category} <span className="text-slate-500 text-xs font-normal">({group.papers.length})</span>
+              </h2>
+            </div>
+            
+            <div className="space-y-3">
+              {group.papers.map((paper, index) => {
+                const isSelected = selectedPapers.some(p => p.url === paper.url);
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: Math.min(index * 0.05, 0.5) }}
+                    key={paper.url}
+                    onClick={() => togglePaperSelection(paper)}
+                    className={`group cursor-pointer p-4 rounded-xl border transition-all duration-300 ${
+                      isSelected
+                        ? 'bg-slate-900 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.1)]'
+                        : 'bg-slate-900/40 border-slate-800/60 hover:bg-slate-900 hover:border-slate-700'
+                    }`}
+                  >
+                    <h3 className={`text-sm font-semibold leading-relaxed mb-2 line-clamp-2 ${isSelected ? 'text-blue-100' : 'text-slate-200 group-hover:text-blue-200 transition-colors'}`}>
+                      {paper.title}
+                    </h3>
+                    
+                    <p className="text-xs text-slate-400 line-clamp-1 mb-3 font-mono">
+                      {paper.authors.join(', ')}
+                    </p>
+
+                    {paper.aiSummary && (
+                      <div className="mb-3 text-xs text-emerald-400 bg-emerald-400/10 p-2.5 rounded-lg border border-emerald-400/20 leading-relaxed font-medium">
+                        <span className="font-bold mr-1 opacity-80">AI 总结:</span>
+                        {paper.aiSummary}
+                      </div>
                     )}
-                  </div>
-                </div>
-                
-                <a 
-                  href={paper.url} 
-                  target="_blank" 
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-slate-500 hover:text-blue-400 transition-colors p-1"
-                  title="在 arXiv 中打开"
-                >
-                  <ExternalLink size={14} />
-                </a>
-              </div>
-            </motion.div>
-          );
-        })}
+                    
+                    <div className="flex items-center justify-between mt-auto">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <div className="flex gap-1 overflow-hidden">
+                          {paper.categories.slice(0, 3).map((cat) => (
+                            <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400 whitespace-nowrap">
+                              {cat}
+                            </span>
+                          ))}
+                          {paper.categories.length > 3 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-500">
+                              +{paper.categories.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <a 
+                        href={paper.url} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-slate-500 hover:text-blue-400 transition-colors p-1"
+                        title="在 arXiv 中打开"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
         {filteredPapers.length === 0 && (
           <div className="text-center py-12 text-slate-500 text-sm font-mono">
             未找到匹配的论文

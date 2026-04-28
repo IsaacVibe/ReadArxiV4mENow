@@ -2,18 +2,42 @@ import { useEffect, useRef } from 'react';
 import { useStore } from './store/useStore';
 import { PaperList } from './components/PaperList';
 import { ChatPanel } from './components/ChatPanel';
-import { Sparkles, FileUp } from 'lucide-react';
+import { FileUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 function App() {
-  const { setDailyData } = useStore();
+  const { setDailyData, model, setModel } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch('/papers.json')
-      .then((res) => res.json())
-      .then((data) => setDailyData(data))
-      .catch((err) => console.error('Failed to load papers:', err));
+    // Load the latest papers automatically when the app starts
+    const loadLatestPapers = async () => {
+      try {
+        const indexResponse = await fetch('/latest.json');
+        if (indexResponse.ok) {
+          const indexData = await indexResponse.json();
+          if (indexData.latest_file) {
+            const dataResponse = await fetch(`/${indexData.latest_file}`);
+            if (dataResponse.ok) {
+              const data = await dataResponse.json();
+              setDailyData(data);
+              return;
+            }
+          }
+        }
+        
+        // Fallback to papers.json if latest.json doesn't exist
+        const fallbackResponse = await fetch('/papers.json');
+        if (fallbackResponse.ok) {
+          const data = await fallbackResponse.json();
+          setDailyData(data);
+        }
+      } catch (err) {
+        console.error('Failed to load papers:', err);
+      }
+    };
+    
+    loadLatestPapers();
   }, [setDailyData]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -26,7 +50,7 @@ function App() {
         if (json.papers && json.date) {
           setDailyData(json);
         } else {
-          alert('JSON 文件格式不匹配，请确保是 fetch_arxiv.py 生成的文件。');
+          alert('JSON 文件格式不匹配，请确保是 fetch_arxiv.py 生成的文件或 RAVEN 导出的总结文件。');
         }
       } catch (err) {
         alert('解析 JSON 文件失败，请确保文件格式正确。');
@@ -47,12 +71,18 @@ function App() {
         {/* App Header */}
         <div className="h-16 px-5 flex items-center justify-between bg-slate-950 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
-              <Sparkles size={16} />
+            <div className="relative w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden shadow-lg">
+              <span className="text-slate-200 font-bold text-sm">R</span>
+              <img src="/raven.png" alt="RAVEN" className="absolute inset-0 w-full h-full object-contain" />
             </div>
-            <h1 className="font-semibold tracking-wide bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
-              arXiv AI
-            </h1>
+            <div className="leading-tight">
+              <h1 className="font-semibold tracking-wide bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
+                RAVEN
+              </h1>
+              <div className="text-[10px] text-slate-500 font-mono tracking-wide">
+                Read ArxiV 4 mE Now
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
@@ -64,6 +94,18 @@ function App() {
               <FileUp size={18} />
             </button>
           </div>
+        </div>
+
+        <div className="px-5 py-2 bg-slate-900 border-b border-slate-800 flex items-center gap-3 shrink-0">
+          <span className="text-xs text-slate-500 font-mono">Model:</span>
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all font-mono"
+            placeholder="e.g. deepseek-v4-pro"
+            title="自由修改调用的模型名称 (如: deepseek-v4-pro, llama3 等)"
+          />
         </div>
 
         {/* Paper List */}
