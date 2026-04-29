@@ -6,12 +6,14 @@ import ReactMarkdown from 'react-markdown';
 import { callLLM } from '../utils/llm';
 
 export function ChatPanel() {
-  const { messages, addMessage, selectedPapers, togglePaperSelection, clearSelectedPapers, apiKey, baseUrl, model, dailyData, updateDailySummary } = useStore();
+  const { threads, activeThreadId, addChatMessage, appendToThreadMessage, selectedPapers, togglePaperSelection, clearSelectedPapers, apiKey, baseUrl, model, dailyData, updateDailySummary } = useStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeThread = threads[activeThreadId];
+  const messages = activeThread ? activeThread.messages : [];
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -68,8 +70,24 @@ ${papersContext}`;
   const handleExportSummaries = () => {
     if (!dailyData) return;
 
+    const threadList = Object.values(threads);
+    const paperToThreads: Record<string, string[]> = {};
+    threadList.forEach((t) => {
+      t.paperUrls.forEach((u) => {
+        if (!paperToThreads[u]) paperToThreads[u] = [];
+        if (!paperToThreads[u].includes(t.id)) {
+          paperToThreads[u].push(t.id);
+        }
+      });
+    });
+
     const exportData = {
       ...dailyData,
+      papers: dailyData.papers.map((p) => ({
+        ...p,
+        chatThreadIds: paperToThreads[p.url] || [],
+      })),
+      threads: threadList,
     };
 
     // 触发下载
@@ -99,8 +117,9 @@ ${papersContext}`;
     //   return;
     // }
 
+    const threadId = activeThreadId;
     const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: input };
-    addMessage(userMessage);
+    addChatMessage(userMessage);
     setInput('');
     setIsLoading(true);
 
@@ -112,11 +131,11 @@ ${papersContext}`;
           systemPrompt += `
 [${index + 1}] 标题：${paper.title}
 作者：${paper.authors.join(', ')}
-arXiv 链接：${paper.url}
+PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs/', '/pdf/')}
 摘要：${paper.summary}
 `;
         });
-        systemPrompt += `\n提示：你可以根据这些论文的 arXiv 链接或 arXiv 号进行深度分析。如果用户提出问题，请优先基于这些被选中的论文信息进行解答、对比或总结。`;
+        systemPrompt += `\n提示：如果需要更细致的信息，你可以直接尝试读取上述论文对应的 PDF 外链进行深入理解与引用。如果用户提出问题，请优先基于这些被选中的论文信息进行解答、对比或总结。`;
       }
 
       const apiMessages = [
@@ -126,7 +145,7 @@ arXiv 链接：${paper.url}
       ];
 
       const assistantMessageId = (Date.now() + 1).toString();
-      addMessage({ id: assistantMessageId, role: 'assistant', content: '' });
+      addChatMessage({ id: assistantMessageId, role: 'assistant', content: '' });
 
       await callLLM(
         apiMessages as any,
@@ -134,19 +153,12 @@ arXiv 链接：${paper.url}
         baseUrl,
         model,
         (chunk) => {
-          useStore.setState((state) => {
-            const newMessages = [...state.messages];
-            const lastMsg = newMessages[newMessages.length - 1];
-            if (lastMsg.id === assistantMessageId) {
-              lastMsg.content += chunk;
-            }
-            return { messages: newMessages };
-          });
+          appendToThreadMessage(threadId, assistantMessageId, chunk);
         }
       );
     } catch (error: any) {
       console.error(error);
-      addMessage({ id: Date.now().toString(), role: 'assistant', content: `**Error:** ${error.message}` });
+      addChatMessage({ id: Date.now().toString(), role: 'assistant', content: `**Error:** ${error.message}` });
     } finally {
       setIsLoading(false);
     }
