@@ -16,19 +16,33 @@ export function PaperList() {
     updatePaperAiSummary 
   } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  const availableCategories = useMemo(() => {
+    if (!dailyData) return [];
+    return Object.entries(dailyData.subjects_counter || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([category, count]) => ({ category, count }));
+  }, [dailyData]);
 
   const filteredPapers = useMemo(() => {
     if (!dailyData) return [];
     return dailyData.papers.filter((paper) => {
       const searchLower = searchTerm.toLowerCase();
+      const matchesCategory =
+        selectedCategories.length === 0 ||
+        paper.categories.some((cat) => selectedCategories.includes(cat));
       return (
-        paper.title.toLowerCase().includes(searchLower) ||
-        paper.summary.toLowerCase().includes(searchLower) ||
-        paper.authors.some(a => a.toLowerCase().includes(searchLower))
+        matchesCategory &&
+        (
+          paper.title.toLowerCase().includes(searchLower) ||
+          paper.summary.toLowerCase().includes(searchLower) ||
+          paper.authors.some(a => a.toLowerCase().includes(searchLower))
+        )
       );
     });
-  }, [dailyData, searchTerm]);
+  }, [dailyData, searchTerm, selectedCategories]);
 
   const groupedPapers = useMemo(() => {
     const groups: Record<string, Paper[]> = {};
@@ -46,9 +60,19 @@ export function PaperList() {
     }));
   }, [filteredPapers]);
 
+  const toggleCategory = (category: string) => {
+    setSelectedCategories((prev) => {
+      if (prev.includes(category)) {
+        return prev.filter((c) => c !== category);
+      }
+      return [...prev, category];
+    });
+  };
+
   const handleGenerateSummaries = async () => {
     if (isGenerating || selectedPapers.length === 0) return;
     setIsGenerating(true);
+    
     
     try {
       for (const paper of selectedPapers) {
@@ -134,6 +158,38 @@ export function PaperList() {
             {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
             <span>{isGenerating ? '生成中...' : `总结已选 (${selectedPapers.length})`}</span>
           </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto custom-scrollbar pr-1">
+          <button
+            onClick={() => setSelectedCategories([])}
+            className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors font-mono ${
+              selectedCategories.length === 0
+                ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+            }`}
+            title="清空分类筛选"
+          >
+            全部
+          </button>
+          {availableCategories.map(({ category, count }) => {
+            const isActive = selectedCategories.includes(category);
+            return (
+              <button
+                key={category}
+                onClick={() => toggleCategory(category)}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors font-mono flex items-center gap-1 ${
+                  isActive
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                }`}
+                title={`筛选分类：${category}`}
+              >
+                <span>{category}</span>
+                <span className="text-[10px] opacity-70">({count})</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
