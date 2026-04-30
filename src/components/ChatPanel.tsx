@@ -6,14 +6,30 @@ import ReactMarkdown from 'react-markdown';
 import { callLLM } from '../utils/llm';
 
 export function ChatPanel() {
-  const { threads, activeThreadId, addChatMessage, appendToThreadMessage, selectedPapers, togglePaperSelection, clearSelectedPapers, apiKey, baseUrl, model, dailyData, updateDailySummary } = useStore();
+  const { 
+    selectedPapers, 
+    togglePaperSelection, 
+    clearSelectedPapers, 
+    apiKey, 
+    baseUrl, 
+    model, 
+    dailyData, 
+    updateDailySummary,
+    conversations,
+    conversationOrder,
+    activeConversationId,
+    createConversationFromSelection,
+    addMessageToConversation,
+    appendToAssistantMessage,
+  } = useStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const activeThread = threads[activeThreadId];
-  const messages = activeThread ? activeThread.messages : [];
+
+  const activeConversation = activeConversationId ? conversations[activeConversationId] : null;
+  const messages = activeConversation ? activeConversation.messages : [];
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -21,7 +37,7 @@ export function ChatPanel() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading]);
+  }, [messages.length, isLoading, activeConversationId]);
 
   const handleDailySummary = async () => {
     if (!dailyData || isGeneratingSummary) return;
@@ -70,24 +86,12 @@ ${papersContext}`;
   const handleExportSummaries = () => {
     if (!dailyData) return;
 
-    const threadList = Object.values(threads);
-    const paperToThreads: Record<string, string[]> = {};
-    threadList.forEach((t) => {
-      t.paperUrls.forEach((u) => {
-        if (!paperToThreads[u]) paperToThreads[u] = [];
-        if (!paperToThreads[u].includes(t.id)) {
-          paperToThreads[u].push(t.id);
-        }
-      });
-    });
-
+    const orderedConversations = conversationOrder.map((id) => conversations[id]).filter(Boolean);
     const exportData = {
       ...dailyData,
-      papers: dailyData.papers.map((p) => ({
-        ...p,
-        chatThreadIds: paperToThreads[p.url] || [],
-      })),
-      threads: threadList,
+      conversations: orderedConversations,
+      conversationOrder: orderedConversations.map((c) => c.id),
+      activeConversationId,
     };
 
     // 触发下载
@@ -109,17 +113,13 @@ ${papersContext}`;
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
+    if (selectedPapers.length === 0) return;
 
-    // 去掉强制检查 API Key 的逻辑
-    // if (!apiKey) {
-    //   alert('请先在设置中配置 API Key');
-    //   setSettingsOpen(true);
-    //   return;
-    // }
+    const nextConversationId = activeConversationId || createConversationFromSelection();
+    if (!nextConversationId) return;
 
-    const threadId = activeThreadId;
     const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: input };
-    addChatMessage(userMessage);
+    addMessageToConversation(nextConversationId, userMessage);
     setInput('');
     setIsLoading(true);
 
@@ -131,6 +131,7 @@ ${papersContext}`;
           systemPrompt += `
 [${index + 1}] 标题：${paper.title}
 作者：${paper.authors.join(', ')}
+arXiv 链接：${paper.url}
 PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs/', '/pdf/')}
 摘要：${paper.summary}
 `;
@@ -138,14 +139,14 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
         systemPrompt += `\n提示：如果需要更细致的信息，你可以直接尝试读取上述论文对应的 PDF 外链进行深入理解与引用。如果用户提出问题，请优先基于这些被选中的论文信息进行解答、对比或总结。`;
       }
 
+      const convMessages = (conversations[nextConversationId]?.messages || []).map((m) => ({ role: m.role, content: m.content }));
       const apiMessages = [
         { role: 'system', content: systemPrompt },
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
-        { role: 'user', content: input },
+        ...convMessages,
       ];
 
       const assistantMessageId = (Date.now() + 1).toString();
-      addChatMessage({ id: assistantMessageId, role: 'assistant', content: '' });
+      addMessageToConversation(nextConversationId, { id: assistantMessageId, role: 'assistant', content: '' });
 
       await callLLM(
         apiMessages as any,
@@ -153,12 +154,12 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
         baseUrl,
         model,
         (chunk) => {
-          appendToThreadMessage(threadId, assistantMessageId, chunk);
+          appendToAssistantMessage(nextConversationId, assistantMessageId, chunk);
         }
       );
     } catch (error: any) {
       console.error(error);
-      addChatMessage({ id: Date.now().toString(), role: 'assistant', content: `**Error:** ${error.message}` });
+      addMessageToConversation(nextConversationId, { id: Date.now().toString(), role: 'assistant', content: `**Error:** ${error.message}` });
     } finally {
       setIsLoading(false);
     }
@@ -178,7 +179,7 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
               <Bot size={20} />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-slate-200 tracking-wide">RAVEN AI 助手</h2>
+              <h2 className="text-sm font-semibold text-slate-200 tracking-wide">{activeConversation ? activeConversation.title : 'RAVEN AI 助手'}</h2>
               <p className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
                 <Cpu size={10} /> {model}
               </p>
@@ -296,8 +297,10 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
           <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-50">
             <Bot size={48} className="text-slate-400" />
             <div className="space-y-1">
-              <p className="text-sm text-slate-300">你好，我是 RAVEN，你的 arXiv 论文解读助手。</p>
-              <p className="text-xs text-slate-500 font-mono">你可以让我总结今日最新研究，或者解读特定的论文。</p>
+              <p className="text-sm text-slate-300">
+                {selectedPapers.length > 0 ? `已选中 ${selectedPapers.length} 篇论文。发送消息将创建一个新的上下文会话。` : '请选择论文开始上下文对话，或从左侧论文条目进入已有会话。'}
+              </p>
+              <p className="text-xs text-slate-500 font-mono">今日亮点总结与一句话总结可独立生成并导出。</p>
             </div>
           </div>
         )}
@@ -358,13 +361,13 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={selectedPapers.length > 0 ? `向 AI 提问关于这 ${selectedPapers.length} 篇论文的问题...` : "输入您的问题..."}
+            placeholder={selectedPapers.length > 0 ? `向 AI 提问关于这 ${selectedPapers.length} 篇论文的问题...` : "请先在左侧选中论文"}
             className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-4 pr-12 py-3.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all placeholder:text-slate-600 shadow-inner"
-            disabled={isLoading}
+            disabled={isLoading || selectedPapers.length === 0}
           />
           <button
             type="submit"
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || selectedPapers.length === 0}
             className="absolute right-2 p-2 rounded-lg text-blue-500 hover:bg-blue-500/10 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
           >
             <Send size={18} className={input.trim() && !isLoading ? "translate-x-0.5 -translate-y-0.5" : ""} />

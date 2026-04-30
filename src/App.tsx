@@ -6,7 +6,7 @@ import { FileUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 function App() {
-  const { loadRavenData, model, setModel } = useStore();
+  const { setDailyData, hydrateWorkspace, model, setModel } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -20,7 +20,7 @@ function App() {
             const dataResponse = await fetch(`/${indexData.latest_file}`);
             if (dataResponse.ok) {
               const data = await dataResponse.json();
-              loadRavenData(data);
+              setDailyData(data);
               return;
             }
           }
@@ -30,7 +30,7 @@ function App() {
         const fallbackResponse = await fetch('/papers.json');
         if (fallbackResponse.ok) {
           const data = await fallbackResponse.json();
-          loadRavenData(data);
+          setDailyData(data);
         }
       } catch (err) {
         console.error('Failed to load papers:', err);
@@ -38,7 +38,7 @@ function App() {
     };
     
     loadLatestPapers();
-  }, [loadRavenData]);
+  }, [setDailyData]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -48,7 +48,7 @@ function App() {
       try {
         const json = JSON.parse(event.target?.result as string);
         if (json.papers && json.date) {
-          loadRavenData(json);
+          hydrateWorkspace(json);
         } else {
           alert('JSON 文件格式不匹配，请确保是 fetch_arxiv.py 生成的文件或 RAVEN 导出的总结文件。');
         }

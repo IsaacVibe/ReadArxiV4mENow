@@ -1,0 +1,172 @@
+{
+  "date": "2026-04-30",
+  "total": 6,
+  "subjects_counter": {
+    "astro-ph.HE": 6,
+    "astro-ph.GA": 1,
+    "astro-ph.CO": 1
+  },
+  "papers": [
+    {
+      "title": "A sample of short-lived Galactic radio transients from ASKAP VAST",
+      "authors": [
+        "Akash Anumarlapudi",
+        "David L. Kaplan",
+        "Natasha Hurley Walker",
+        "Stella Koch Ocker",
+        "Daniel Kelson",
+        "Dougal Dobie",
+        "Laura Driessen",
+        "Tara Murphy",
+        "Joshua Pritchard"
+      ],
+      "summary": "Galactic radio transients (GRTs) are mysterious short-lived (~days to months) radio transients that are quiet at all other wavelengths. Until now, roughly half a dozen such sources have been reported, predominantly towards the Galactic center. However, no unifying properties have been identified among these, leaving their nature, emission mechanism, and even classification poorly understood. Due to the lack of periodic and uniform radio observations over wide areas of the Galactic plane until now, the sample size of such transients remained limited. Here, we use radio observations from the Australian SKA Pathfinder's Variables and Slow Transients survey to discover six new radio transients along the Galactic plane that resemble GRTs. Detailed investigation of archival data suggests that these sources may be divided into two classes: sources that exhibit sporadic, pulse-like (minutes) radio emission, and sources that exhibit long-term (weeks) flaring-type radio emission. For the short-time variable sources, we draw similarities between optically bright long-period radio transients and our sample to propose wide-orbit (~days) white dwarf binaries as underlying sources. For sources that show long-term outbursts, we draw comparisons between dust-obscured outbursts from WD binaries and our sample. These results could imply that the ongoing wide-field radio surveys are uncovering radio emission from sub-populations of WD binaries that were previously unexplored.",
+      "categories": [
+        "astro-ph.HE",
+        "astro-ph.GA"
+      ],
+      "url": "https://arxiv.org/abs/2604.11881"
+    },
+    {
+      "title": "Resolving the 2024 Outburst of Magnetar 1E 1841-045 from its host Supernova Remnant with EP-FXT",
+      "authors": [
+        "Yu-Cong Fu",
+        "Lin Lin",
+        "Yu-Jia Zheng",
+        "Ming-Yu Ge",
+        "Han-Long Peng",
+        "Dong-Ming Li",
+        "Francesco Coti Zelati",
+        "Ersin Göǧüş",
+        "Nanda Rea",
+        "Bing Zhang",
+        "Wei-Wei Zhu",
+        "Ke-Jia Lee",
+        "Teruaki Enoto",
+        "Chryssa Kouveliotou"
+      ],
+      "summary": "The magnetar 1E 1841-045 exhibited a new active episode starting on August 20, 2024, marked by X-ray bursts and enhanced persistent emission. Using data from the Einstein Probe (EP), we report on the timing and spectral results following the onset of this outburst. The pulse profile displays a multi-peaked structure, with notable phase shifts in the secondary peak. Energy-resolved pulse profile analysis indicates a transition in the dominant peak of the pulse profile above 5.8 keV. The 0.5-10 keV X-ray spectrum is well-modeled by a combined blackbody and power-law (BB+PL) model, showing a $\\sim 20\\%$ flux increase following the outburst. Phase-resolved spectroscopy indicates a correlation between BB temperature and pulse profile intensity, along with spectral hardening at a specific pulse phase. The high spatial resolution of EP enables effective separation of the supernova remnant emission, which is crucial for measuring the intrinsic pulse emission of the source. These findings underscore the intricate relationship between magnetar outbursts, pulse profile evolution, and spectral characteristics.",
+      "categories": [
+        "astro-ph.HE"
+      ],
+      "url": "https://arxiv.org/abs/2604.07734"
+    },
+    {
+      "title": "The RRATalog: a Galactic census of rotating radio transients",
+      "authors": [
+        "Devansh Agarwal",
+        "Evan F. Lewis",
+        "Duncan R. Lorimer",
+        "Maura A. McLaughlin",
+        "Bingyi Cui",
+        "Anna Turner",
+        "Natasha McMann"
+      ],
+      "summary": "Rotating radio transients (RRATs) represent a significant but poorly understood component of the Galactic neutron star population, characterized by sporadic emission first detectable only through single-pulse searches. We present the RRATalog, an up-to-date catalogue of 335 RRATs, and utilize a uniform sample of RRATs discovered in four Parkes telescope surveys to model their Galactic population. Accounting in detail for observational selection effects, we find a radial density profile similar to pulsars, but identify a significantly steeper luminosity function (power-law index $\\alpha \\simeq -1.3$) than previously assumed. For sources beaming towards Earth, we estimate $34000 \\pm 1600$ potentially observable RRATs above a peak luminosity of 30 mJy kpc$^2$. At these high luminosities, the RRAT population is comparable in size to that of canonical pulsars. Consistent with the observed distribution, the underlying period distribution is significantly shifted toward longer periods compared to canonical pulsars, suggesting RRATs represent a more evolved population. We find evidence for a turnover in the luminosity function below 30 mJy kpc$^2$, and predict that the total number of potentially observable RRATs is $\\lesssim 70,000$. Applying the Tauris \\& Manchester beaming model, we estimate the total Galactic RRAT population to be $\\lesssim 400,000$. The implied birth rate of $\\lesssim 1.4$ RRATs per century is consistent with the Galactic core-collapse supernova rate, suggesting RRATs can be reconciled with known progenitor rates without requiring a separate evolutionary origin. We provide predictions for RRAT discoveries in ongoing and future surveys.",
+      "categories": [
+        "astro-ph.HE"
+      ],
+      "url": "https://arxiv.org/abs/2604.01203"
+    },
+    {
+      "title": "Great Walls of Cosmic Baryons in the Northern Sky",
+      "authors": [
+        "Vikram Ravi",
+        "Kritti Sharma",
+        "Liam Connor"
+      ],
+      "summary": "The dispersion measures (DMs) of fast radio bursts (FRBs) encode the total ionized-gas column densities along their sightlines. Most observed FRBs originate at distances where the cosmological principle applies. Thus, variations in the DM distribution of FRBs observed in different regions on the sky trace local sources of anisotropy, such as the warm ionized medium and circum-galactic medium of the Milky Way, and local large-scale structure. We present a map of extragalactic DM variations across the Northern sky using a few thousand FRBs from the second \\chime{} catalog. We detect a $\\gtrsim 4\\sigma$ excess of $\\sim$150 pc cm$^{-3}$ above the global mean, extended over $\\sim$30$^\\circ$ scales and centered near $\\alpha \\approx$ $12^{\\rm h}$, $\\delta \\approx$ $55^\\circ$. This excess, termed Wall 1, is robust to variations in sample selection and jackknife resampling, and cannot be explained by Galactic-disk DM-model uncertainties. The excess is likely too large to correspond to anisotropy in the Milky Way halo. The signal spatially coincides with the Ursa Major supercluster and associated large-scale structures. A secondary, more tentative Wall 2 near $\\alpha \\approx 2^{\\rm h}$, $\\delta \\approx$ $45^\\circ$ is spatially coincident with the Perseus-Pisces supercluster. Although the spatial coincidences suggest that the Walls may correspond to baryons in the local large-scale structure, the probability of chance coincidence is likely too high ($\\sim10-20\\%$) to claim confident associations. These results highlight the potential of using FRB DMs to detect baryon overdensities associated with local large-scale structure, and have important implications for near-field baryon mapping and FRB cosmology.",
+      "categories": [
+        "astro-ph.CO",
+        "astro-ph.HE"
+      ],
+      "url": "https://arxiv.org/abs/2604.05093"
+    },
+    {
+      "title": "FRB Searches with the Irish LOFAR Station",
+      "authors": [
+        "D. J. McKenna",
+        "E. F. Keane"
+      ],
+      "summary": "Here we report null results in the search for radio emission below $200$~MHz from six known fast radio burst sources. The observations reported here were taken using the Irish LOFAR station's high-band antennas over the course of 2020, 2021 and 2022; the cumulative observing time was $218$~h.",
+      "categories": [
+        "astro-ph.HE"
+      ],
+      "url": "https://arxiv.org/abs/2604.03283"
+    },
+    {
+      "title": "The Northern High Time Resolution Universe pulsar survey: III. Single-pulse search continuation, follow-up observations, and initial results",
+      "authors": [
+        "L.J.M. Houben",
+        "H. Falcke",
+        "L.G. Spitler",
+        "E.D. Barr",
+        "M. Berezina",
+        "D.J. Champion",
+        "R. Karuppusamy",
+        "M. Kramer"
+      ],
+      "summary": "We continued the search for single pulses (SPs) in the northern part of the all-sky High Time Resolution Universe survey, whose aim is to detect pulsars and other radio transients. This search is now about 21% complete and has yielded the first discovery of a fast radio burst (FRB) with the 100 m Effelsberg Radio Telescope. FRB20110220A was detected with an S/N-optimised dispersion measure of 501.0 pc/cm$^{3}$ and a width of 11.9 $\\pm$ 3.5 ms, for a fluence of 0.6 $\\pm$ 0.1 Jy ms. We obtained the first L-band detection of the rotating radio transient (RRAT) J2028+28, from which we obtained upper limits on the source's period and burst rate, as well as an improved position. We also discovered a new RRAT, J0404+53, which had previously been reported as an isolated SP candidate. Eight new SP trains and 272 faint isolated SP candidates were detected too. We used these candidates to demonstrate that their all-sky detection rates depend on Galactic latitude and longitude. This direction dependence suggests the existence of a faint Galactic SP population.",
+      "categories": [
+        "astro-ph.HE"
+      ],
+      "url": "https://arxiv.org/abs/2604.09080"
+    },
+    {
+      "title": "IXPE Polarizations of the Lighthouse Pulsar, Trail, and Filament",
+      "authors": [
+        "Jack T. Dinsmore",
+        "Roger W. Romani",
+        "S. Zhang",
+        "C. -Y. Ng",
+        "Stefano Silvestri",
+        "Oleg Kargaltsev",
+        "Niccolo' Bucciantini",
+        "Philip Kaaret",
+        "Josephine Wong",
+        "Patrick Slane",
+        "Paolo Soffitta",
+        "Martin C. Weisskopf"
+      ],
+      "summary": "The Lighthouse pulsar (PSR J1101$-$6101) sports a bright X-ray trail and filament. The synchrotron emission from both structures is expected to be polarized, with electric vector position angle (EVPA) perpendicular to the magnetic field direction and polarization degree (PD) indicating the local degree of magnetic turbulence. We present a 1 megasecond Imaging X-ray Polarimetry Explorer (IXPE) observation of the Lighthouse complex. At the 99% confidence level, we detect the filament polarization with PD $55 \\pm 18\\%$ and EVPA indicating a magnetic field parallel to the filament axis. The large PD implies a turbulent magnetic field weaker than the background field, in conflict with some existing models. We also detect polarization from the pulsar and trail. The trail's X-ray polarization is nearly orthogonal to the radio polarization, suggesting spatial separation between the X-ray- and radio-emitting leptons. The pulsar polarization is well-fit by the rotating vector model.",
+      "categories": [
+        "astro-ph.HE"
+      ],
+      "url": "https://arxiv.org/abs/2604.22914"
+    },
+    {
+      "title": "Rotation Measure Substructures Induced by the Ponderomotive Force of Inertial \\alfven Waves",
+      "authors": [
+        "Qing Zhao",
+        "Di Xiao",
+        "Xue-Feng Wu"
+      ],
+      "summary": "The rotation measure (RM) and dispersion measure (DM) of fast radio bursts (FRBs) serve as critical probes of the magneto-ionic environments along the line of sight. The significant temporal evolution of RM observed in some repeating FRBs is generally attributed to the local environment of the source, since the intergalactic medium is not expected to vary on such short timescales. Recent observations of repeating FRB 20201124A and FRB 20220529 exhibit complex RM phenomenology, including large-amplitude global fluctuations and short-term substructures. Here, we attribute these short-term RM variations to the ponderomotive force exerted by inertial \\alfven~waves (IAWs). We propose that IAWs, generated via magnetic reconnection or turbulent cascades in a low-$\\beta$ plasma, induce nonlinear density perturbations in the source environment. We demonstrate that the resulting plasma density redistribution can produce RM suppression consistent with observed substructures. This model presents a physically motivated mechanism for the short-term RM variability observed in active repeaters. It demonstrates that such fluctuations can arise from wave-driven density cavitation within a broad, coupled parameter space involving wave amplitude, plasma density, and temperature, thereby characterizing the localized plasma dynamics required to produce the observed RM jitters.",
+      "categories": [
+        "astro-ph.HE"
+      ],
+      "url": "https://arxiv.org/abs/2604.25469"
+    },
+    {
+      "title": "Fast radio burst dispersion is an unbiased tracer of matter on large scales",
+      "authors": [
+        "Shion Andrew",
+        "Haochen Wang",
+        "Kiyoshi Masui",
+        "Josh Borrow",
+        "Calvin Leung",
+        "Ryan Raikman",
+        "Matthieu Schaller",
+        "Joop Schaye",
+        "James M. Sullivan"
+      ],
+      "summary": "The dispersion of fast radio bursts (FRBs) measures the column density of free electrons, tracing the diffuse ionized gas that contains more than $90\\%$ of all baryons. On linear scales the FRB dispersion field is an approximately unbiased tracer of the matter distribution, an idea long assumed in the FRB large-scale structure literature and recently formalized by Zhou and Zhang [arXiv:2510.11022]. This follows from baryon-mass conservation, which forces the total baryon field to have unit linear bias, with dispersion inheriting this bias up to small corrections from the stellar and neutral-gas components. We show these corrections can be bounded at the percent level using existing galaxy and 21 cm surveys, and confirm with the FLAMINGO hydrodynamical simulations that the electron bias varies at the percent level across a wide range of feedback prescriptions. The dispersion-galaxy cross-power spectrum at linear scales directly constrains $B_8 \\equiv \\sigma_8(\\Omega_b/0.05)^{1/2}$, a baryonic analog of $S_8$, independently of feedback physics. Because most of the per-object variance in dispersion is cosmological signal rather than noise, $\\sim\\!10^5$ localized FRBs can match the statistical power of $\\sim\\!10^8$ weak-lensing galaxy shape measurements. FRB dispersion thus joins weak lensing and redshift-space distortions as a new unbiased tracer of matter on large scales.",
+      "categories": [
+        "astro-ph.CO",
+        "astro-ph.GA",
+        "astro-ph.HE"
+      ],
+      "url": "https://arxiv.org/abs/2604.25828"
+    }
+  ]
+}

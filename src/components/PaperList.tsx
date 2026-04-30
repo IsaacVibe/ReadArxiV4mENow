@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useStore, ChatThread } from '../store/useStore';
-import { Search, ExternalLink, Calendar, BookOpen, Bot, Loader2, CheckSquare } from 'lucide-react';
+import { useStore, Paper } from '../store/useStore';
+import { Search, Tag, ExternalLink, Calendar, BookOpen, Bot, Loader2, CheckSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { callLLM } from '../utils/llm';
 
@@ -15,8 +15,10 @@ export function PaperList() {
     selectedPapers, 
     togglePaperSelection, 
     selectAllPapers,
-    threads,
-    activateThread,
+    conversations,
+    conversationOrder,
+    activeConversationId,
+    activateConversation,
     apiKey, 
     baseUrl, 
     model, 
@@ -25,6 +27,8 @@ export function PaperList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isConversationOpen, setIsConversationOpen] = useState(false);
+  const [conversationSearchTerm, setConversationSearchTerm] = useState('');
 
   const availableCategories = useMemo(() => {
     if (!dailyData) return [];
@@ -51,25 +55,21 @@ export function PaperList() {
     });
   }, [dailyData, searchTerm, selectedCategories]);
 
-  const paperIndexMap = useMemo(() => {
-    if (!dailyData) return new Map<string, number>();
-    return new Map(dailyData.papers.map((p, i) => [p.url, i + 1]));
-  }, [dailyData]);
-
-  const paperThreadsMap = useMemo(() => {
-    const map: Record<string, ChatThread[]> = {};
-    Object.values(threads).forEach((t) => {
-      if (!t.paperUrls || t.paperUrls.length === 0) return;
-      t.paperUrls.forEach((u) => {
-        if (!map[u]) map[u] = [];
-        map[u].push(t);
-      });
+  const groupedPapers = useMemo(() => {
+    const groups: Record<string, Paper[]> = {};
+    filteredPapers.forEach(paper => {
+      const mainCategory = paper.categories[0] || 'Unknown';
+      if (!groups[mainCategory]) {
+        groups[mainCategory] = [];
+      }
+      groups[mainCategory].push(paper);
     });
-    Object.keys(map).forEach((u) => {
-      map[u].sort((a, b) => b.updatedAt - a.updatedAt);
-    });
-    return map;
-  }, [threads]);
+    
+    return Object.keys(groups).sort().map(key => ({
+      category: key,
+      papers: groups[key]
+    }));
+  }, [filteredPapers]);
 
   const toggleCategory = (category: string) => {
     setSelectedCategories((prev) => {
@@ -79,6 +79,30 @@ export function PaperList() {
       return [...prev, category];
     });
   };
+
+  const conversationsList = useMemo(() => {
+    return conversationOrder.map((id) => conversations[id]).filter(Boolean);
+  }, [conversationOrder, conversations]);
+
+  const filteredConversations = useMemo(() => {
+    const q = conversationSearchTerm.trim().toLowerCase();
+    if (!q) return conversationsList;
+    return conversationsList.filter((c) => {
+      if (c.title.toLowerCase().includes(q)) return true;
+      return c.paperUrls.some((u) => u.toLowerCase().includes(q));
+    });
+  }, [conversationSearchTerm, conversationsList]);
+
+  const paperConversationIds = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    conversationsList.forEach((c) => {
+      c.paperUrls.forEach((u) => {
+        if (!map[u]) map[u] = [];
+        map[u].push(c.id);
+      });
+    });
+    return map;
+  }, [conversationsList]);
 
   const handleGenerateSummaries = async () => {
     if (isGenerating || selectedPapers.length === 0) return;
@@ -202,91 +226,150 @@ export function PaperList() {
             );
           })}
         </div>
+
+        {conversationsList.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setIsConversationOpen(!isConversationOpen)}
+                className="text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                {isConversationOpen ? '隐藏会话' : `会话 (${conversationsList.length})`}
+              </button>
+              {isConversationOpen && (
+                <input
+                  type="text"
+                  value={conversationSearchTerm}
+                  onChange={(e) => setConversationSearchTerm(e.target.value)}
+                  placeholder="查找会话"
+                  className="w-36 bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-[11px] text-slate-300 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all font-mono placeholder:text-slate-600"
+                />
+              )}
+            </div>
+            {isConversationOpen && (
+              <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto custom-scrollbar pr-1">
+                {filteredConversations.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => activateConversation(c.id)}
+                    className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors font-mono ${
+                      c.id === activeConversationId
+                        ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                    }`}
+                    title={`进入会话：${c.title}`}
+                  >
+                    {c.title} <span className="opacity-70">({c.paperUrls.length})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {filteredPapers.map((paper, index) => {
-          const isSelected = selectedPapers.some(p => p.url === paper.url);
-          const paperIndex = paperIndexMap.get(paper.url);
-          const relatedThreads = paperThreadsMap[paper.url] || [];
-          return (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(index * 0.05, 0.5) }}
-              key={paper.url}
-              onClick={() => togglePaperSelection(paper)}
-              className={`group cursor-pointer p-4 rounded-xl border transition-all duration-300 ${
-                isSelected
-                  ? 'bg-slate-900 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.1)]'
-                  : 'bg-slate-900/40 border-slate-800/60 hover:bg-slate-900 hover:border-slate-700'
-              }`}
-            >
-              <h3 className={`text-sm font-semibold leading-relaxed mb-2 line-clamp-2 ${isSelected ? 'text-blue-100' : 'text-slate-200 group-hover:text-blue-200 transition-colors'}`}>
-                {paperIndex ? `[${paperIndex}] ` : ''}{paper.title}
-              </h3>
-              
-              <p className="text-xs text-slate-400 line-clamp-1 mb-3 font-mono">
-                {paper.authors.join(', ')}
-              </p>
-
-              {paper.aiSummary && (
-                <div className="mb-3 text-xs text-emerald-400 bg-emerald-400/10 p-2.5 rounded-lg border border-emerald-400/20 leading-relaxed font-medium">
-                  <span className="font-bold mr-1 opacity-80">AI 总结:</span>
-                  {paper.aiSummary}
-                </div>
-              )}
-
-              {relatedThreads.length > 0 && (
-                <div className="mb-3">
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v) activateThread(v);
-                      e.currentTarget.value = '';
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-blue-500/50 font-mono"
+        {groupedPapers.map((group, groupIndex) => (
+          <div key={group.category} className="space-y-3">
+            <div className="sticky top-0 z-10 flex items-center gap-2 bg-slate-950/90 backdrop-blur py-2 border-b border-slate-800/50">
+              <Tag size={14} className="text-blue-400" />
+              <h2 className="text-sm font-mono font-semibold text-slate-300">
+                {group.category} <span className="text-slate-500 text-xs font-normal">({group.papers.length})</span>
+              </h2>
+            </div>
+            
+            <div className="space-y-3">
+              {group.papers.map((paper, index) => {
+                const isSelected = selectedPapers.some(p => p.url === paper.url);
+                const convIds = paperConversationIds[paper.url] || [];
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: Math.min(index * 0.05, 0.5) }}
+                    key={paper.url}
+                    onClick={() => togglePaperSelection(paper)}
+                    className={`group cursor-pointer p-4 rounded-xl border transition-all duration-300 ${
+                      isSelected
+                        ? 'bg-slate-900 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.1)]'
+                        : 'bg-slate-900/40 border-slate-800/60 hover:bg-slate-900 hover:border-slate-700'
+                    }`}
                   >
-                    <option value="" disabled>切换到相关对话 ({relatedThreads.length})</option>
-                    {relatedThreads.map((t) => (
-                      <option key={t.id} value={t.id}>{t.title}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              
-              <div className="flex items-center justify-between mt-auto">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <div className="flex gap-1 overflow-hidden">
-                    {paper.categories.slice(0, 3).map((cat) => (
-                      <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400 whitespace-nowrap">
-                        {cat}
-                      </span>
-                    ))}
-                    {paper.categories.length > 3 && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-500">
-                        +{paper.categories.length - 3}
-                      </span>
+                    <h3 className={`text-sm font-semibold leading-relaxed mb-2 line-clamp-2 ${isSelected ? 'text-blue-100' : 'text-slate-200 group-hover:text-blue-200 transition-colors'}`}>
+                      {paper.title}
+                    </h3>
+                    
+                    <p className="text-xs text-slate-400 line-clamp-1 mb-3 font-mono">
+                      {paper.authors.join(', ')}
+                    </p>
+
+                    {convIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {convIds.map((cid) => {
+                          const c = conversations[cid];
+                          if (!c) return null;
+                          const isActive = cid === activeConversationId;
+                          return (
+                            <button
+                              key={cid}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                activateConversation(cid);
+                              }}
+                              className={`text-[10px] px-2 py-0.5 rounded border transition-colors font-mono ${
+                                isActive
+                                  ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
+                                  : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-200 hover:border-slate-700'
+                              }`}
+                              title={`切换到会话：${c.title}`}
+                            >
+                              {c.title}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
-                  </div>
-                </div>
-                
-                <a 
-                  href={toPdfUrl(paper.url)} 
-                  target="_blank" 
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-slate-500 hover:text-blue-400 transition-colors p-1"
-                  title="打开 PDF"
-                >
-                  <ExternalLink size={14} />
-                </a>
-              </div>
-            </motion.div>
-          );
-        })}
+
+                    {paper.aiSummary && (
+                      <div className="mb-3 text-xs text-emerald-400 bg-emerald-400/10 p-2.5 rounded-lg border border-emerald-400/20 leading-relaxed font-medium">
+                        <span className="font-bold mr-1 opacity-80">AI 总结:</span>
+                        {paper.aiSummary}
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center justify-between mt-auto">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <div className="flex gap-1 overflow-hidden">
+                          {paper.categories.slice(0, 3).map((cat) => (
+                            <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400 whitespace-nowrap">
+                              {cat}
+                            </span>
+                          ))}
+                          {paper.categories.length > 3 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-500">
+                              +{paper.categories.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <a 
+                        href={toPdfUrl(paper.url)} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-slate-500 hover:text-blue-400 transition-colors p-1"
+                        title="打开 PDF"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
         {filteredPapers.length === 0 && (
           <div className="text-center py-12 text-slate-500 text-sm font-mono">
             未找到匹配的论文

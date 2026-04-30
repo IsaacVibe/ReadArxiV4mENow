@@ -1,0 +1,21 @@
+{
+  "date": "2026-04-30",
+  "total": 1,
+  "subjects_counter": {
+    "astro-ph.HE": 1
+  },
+  "papers": [
+    {
+      "title": "FRB Searches with the Irish LOFAR Station",
+      "authors": [
+        "D. J. McKenna",
+        "E. F. Keane"
+      ],
+      "summary": "Here we report null results in the search for radio emission below $200$~MHz from six known fast radio burst sources. The observations reported here were taken using the Irish LOFAR station's high-band antennas over the course of 2020, 2021 and 2022; the cumulative observing time was $218$~h.",
+      "categories": [
+        "astro-ph.HE"
+      ],
+      "url": "https://arxiv.org/abs/2604.03283"
+    }
+  ]
+}

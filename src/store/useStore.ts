@@ -24,13 +24,13 @@ export interface ChatMessage {
   isDailySummary?: boolean;
 }
 
-export interface ChatThread {
+export interface Conversation {
   id: string;
   title: string;
   paperUrls: string[];
+  messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
-  messages: ChatMessage[];
 }
 
 interface AppState {
@@ -42,7 +42,8 @@ interface AppState {
 
   // Data
   dailyData: DailyData | null;
-  loadRavenData: (data: any) => void;
+  setDailyData: (data: DailyData) => void;
+  hydrateWorkspace: (payload: any) => void;
   updateDailySummary: (summary: string) => void;
   updatePaperAiSummary: (url: string, aiSummary: string) => void;
   selectedPapers: Paper[];
@@ -50,76 +51,15 @@ interface AppState {
   selectAllPapers: (papers: Paper[]) => void;
   clearSelectedPapers: () => void;
 
-  // Chat
-  threads: Record<string, ChatThread>;
-  activeThreadId: string;
-  activateThread: (threadId: string) => void;
-  addChatMessage: (msg: ChatMessage) => void;
-  appendToThreadMessage: (threadId: string, messageId: string, chunk: string) => void;
-  clearActiveThread: () => void;
-}
-
-const GENERAL_THREAD_ID = 'general';
-
-function normalizePaperUrls(papers: Paper[]) {
-  const urls = papers.map((p) => p.url);
-  const uniq = Array.from(new Set(urls));
-  uniq.sort();
-  return uniq;
-}
-
-function selectionKey(urls: string[]) {
-  return urls.join('|');
-}
-
-function buildThreadTitle(papers: Paper[]) {
-  if (papers.length === 0) return '自由对话';
-  if (papers.length === 1) return papers[0].title;
-  return `${papers.length} 篇论文对话`;
-}
-
-function ensureThreadForSelection(state: AppState, papers: Paper[]) {
-  const urls = normalizePaperUrls(papers);
-  if (urls.length === 0) {
-    return {
-      activeThreadId: GENERAL_THREAD_ID,
-    };
-  }
-
-  const key = selectionKey(urls);
-  const existing = Object.values(state.threads).find((t) => selectionKey(t.paperUrls) === key);
-  if (existing) {
-    return {
-      activeThreadId: existing.id,
-    };
-  }
-
-  const now = Date.now();
-  const id = `thread_${now}`;
-  const newThread: ChatThread = {
-    id,
-    title: buildThreadTitle(papers),
-    paperUrls: urls,
-    createdAt: now,
-    updatedAt: now,
-    messages: [],
-  };
-
-  return {
-    threads: { ...state.threads, [id]: newThread },
-    activeThreadId: id,
-  };
-}
-
-function papersForUrls(dailyData: DailyData | null, urls: string[]) {
-  if (!dailyData) return [];
-  const map = new Map(dailyData.papers.map((p) => [p.url, p]));
-  const out: Paper[] = [];
-  urls.forEach((u) => {
-    const p = map.get(u);
-    if (p) out.push(p);
-  });
-  return out;
+  // Conversations
+  conversations: Record<string, Conversation>;
+  conversationOrder: string[];
+  activeConversationId: string | null;
+  createConversationFromSelection: () => string | null;
+  activateConversation: (conversationId: string) => void;
+  addMessageToConversation: (conversationId: string, msg: ChatMessage) => void;
+  appendToAssistantMessage: (conversationId: string, messageId: string, chunk: string) => void;
+  clearConversationMessages: (conversationId: string) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -131,45 +71,64 @@ export const useStore = create<AppState>((set) => ({
 
   // Data
   dailyData: null,
-  loadRavenData: (data) => set((state) => {
-    const dailyData: DailyData = data;
-    const threadsArr: any[] = Array.isArray(data?.threads) ? data.threads : [];
-    const restoredThreads: Record<string, ChatThread> = {};
-
-    threadsArr.forEach((t) => {
-      if (!t?.id || !Array.isArray(t?.messages)) return;
-      const paperUrls = Array.isArray(t.paperUrls)
-        ? Array.from(new Set((t.paperUrls as any[]).map((u) => String(u)))).sort()
-        : [];
-      restoredThreads[t.id] = {
-        id: String(t.id),
-        title: String(t.title || '对话'),
-        paperUrls,
-        createdAt: Number(t.createdAt || Date.now()),
-        updatedAt: Number(t.updatedAt || Date.now()),
-        messages: t.messages as ChatMessage[],
-      };
-    });
-
-    if (!restoredThreads[GENERAL_THREAD_ID]) {
-      const now = Date.now();
-      restoredThreads[GENERAL_THREAD_ID] = {
-        id: GENERAL_THREAD_ID,
-        title: '自由对话',
-        paperUrls: [],
-        createdAt: now,
-        updatedAt: now,
-        messages: [],
-      };
+  setDailyData: (data) => set(() => ({
+    dailyData: data,
+    selectedPapers: [],
+    conversations: {},
+    conversationOrder: [],
+    activeConversationId: null,
+  })),
+  hydrateWorkspace: (payload) => set(() => {
+    if (!payload || !payload.papers || !payload.date) {
+      return {};
     }
 
-    const activeThreadId = restoredThreads[GENERAL_THREAD_ID] ? GENERAL_THREAD_ID : Object.keys(restoredThreads)[0];
+    const dailyData: DailyData = {
+      date: payload.date,
+      total: payload.total ?? (Array.isArray(payload.papers) ? payload.papers.length : 0),
+      subjects_counter: payload.subjects_counter ?? {},
+      papers: payload.papers,
+      dailySummary: payload.dailySummary,
+    };
+
+    const conversationsArray: any[] = Array.isArray(payload.conversations) ? payload.conversations : [];
+    const conversations: Record<string, Conversation> = {};
+    const conversationOrderFromPayload: any[] = Array.isArray(payload.conversationOrder) ? payload.conversationOrder : [];
+    const conversationOrder: string[] = [];
+
+    conversationsArray.forEach((c) => {
+      if (!c || typeof c.id !== 'string' || !Array.isArray(c.paperUrls) || !Array.isArray(c.messages)) return;
+      const conv: Conversation = {
+        id: c.id,
+        title: typeof c.title === 'string' ? c.title : c.id,
+        paperUrls: c.paperUrls,
+        messages: c.messages,
+        createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
+        updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
+      };
+      conversations[conv.id] = conv;
+    });
+
+    conversationOrderFromPayload.forEach((id) => {
+      if (typeof id !== 'string') return;
+      if (conversations[id]) conversationOrder.push(id);
+    });
+    if (conversationOrder.length === 0) {
+      Object.keys(conversations).forEach((id) => conversationOrder.push(id));
+    }
+
+    const activeConversationId = typeof payload.activeConversationId === 'string' ? payload.activeConversationId : null;
+    const selectedPapers =
+      activeConversationId && conversations[activeConversationId]
+        ? dailyData.papers.filter((p) => conversations[activeConversationId].paperUrls.includes(p.url))
+        : [];
 
     return {
       dailyData,
-      selectedPapers: [],
-      threads: restoredThreads,
-      activeThreadId,
+      selectedPapers,
+      conversations,
+      conversationOrder,
+      activeConversationId,
     };
   }),
   updateDailySummary: (summary) => set((state) => ({
@@ -187,12 +146,13 @@ export const useStore = create<AppState>((set) => ({
   selectedPapers: [],
   togglePaperSelection: (paper) => set((state) => {
     const isSelected = state.selectedPapers.some(p => p.url === paper.url);
-    const nextSelected = isSelected
-      ? state.selectedPapers.filter(p => p.url !== paper.url)
-      : [...state.selectedPapers, (state.dailyData?.papers.find(p => p.url === paper.url) || paper)];
-
-    const threadUpdate = ensureThreadForSelection(state, nextSelected);
-    return { selectedPapers: nextSelected, ...threadUpdate };
+    if (isSelected) {
+      const nextSelectedPapers = state.selectedPapers.filter(p => p.url !== paper.url);
+      return { selectedPapers: nextSelectedPapers, activeConversationId: null };
+    } else {
+      const latestPaper = state.dailyData?.papers.find(p => p.url === paper.url) || paper;
+      return { selectedPapers: [...state.selectedPapers, latestPaper], activeConversationId: null };
+    }
   }),
   selectAllPapers: (papers) => set((state) => {
     const newSelection = [...state.selectedPapers];
@@ -202,77 +162,71 @@ export const useStore = create<AppState>((set) => ({
         newSelection.push(latestPaper);
       }
     });
-    const threadUpdate = ensureThreadForSelection(state, newSelection);
-    return { selectedPapers: newSelection, ...threadUpdate };
+    return { selectedPapers: newSelection, activeConversationId: null };
   }),
-  clearSelectedPapers: () => set((state) => ({
-    selectedPapers: [],
-    activeThreadId: GENERAL_THREAD_ID,
-  })),
+  clearSelectedPapers: () => set({ selectedPapers: [], activeConversationId: null }),
 
-  threads: (() => {
+  conversations: {},
+  conversationOrder: [],
+  activeConversationId: null,
+  createConversationFromSelection: () => {
     const now = Date.now();
-    return {
-      [GENERAL_THREAD_ID]: {
-        id: GENERAL_THREAD_ID,
-        title: '自由对话',
-        paperUrls: [],
+    let createdId: string | null = null;
+
+    set((state) => {
+      const paperUrls = state.selectedPapers.map(p => p.url);
+      if (paperUrls.length === 0) {
+        return state;
+      }
+
+      const nextIndex = state.conversationOrder.length + 1;
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const suffix = nextIndex <= alphabet.length ? alphabet[nextIndex - 1] : `${nextIndex}`;
+      const id = `ctx_${now}_${nextIndex}`;
+      const title = `上下文 ${suffix}`;
+
+      const conv: Conversation = {
+        id,
+        title,
+        paperUrls,
+        messages: [],
         createdAt: now,
         updatedAt: now,
-        messages: [],
-      },
-    };
-  })(),
-  activeThreadId: GENERAL_THREAD_ID,
-  activateThread: (threadId) => set((state) => {
-    const thread = state.threads[threadId];
-    if (!thread) return state;
-    const selectedPapers = papersForUrls(state.dailyData, thread.paperUrls);
-    return {
-      activeThreadId: threadId,
-      selectedPapers,
-    };
-  }),
-  addChatMessage: (msg) => set((state) => {
-    const thread = state.threads[state.activeThreadId];
-    if (!thread) return state;
-    const now = Date.now();
-    const updatedThread: ChatThread = {
-      ...thread,
-      updatedAt: now,
-      messages: [...thread.messages, msg],
-    };
-    return {
-      threads: {
-        ...state.threads,
-        [thread.id]: updatedThread,
-      },
-    };
-  }),
-  appendToThreadMessage: (threadId, messageId, chunk) => set((state) => {
-    const thread = state.threads[threadId];
-    if (!thread) return state;
-    const updatedMessages = thread.messages.map((m) => {
-      if (m.id !== messageId) return m;
-      return { ...m, content: m.content + chunk };
+      };
+
+      createdId = id;
+      return {
+        conversations: { ...state.conversations, [id]: conv },
+        conversationOrder: [...state.conversationOrder, id],
+        activeConversationId: id,
+      };
     });
-    const now = Date.now();
-    return {
-      threads: {
-        ...state.threads,
-        [thread.id]: { ...thread, updatedAt: now, messages: updatedMessages },
-      },
-    };
+
+    return createdId;
+  },
+  activateConversation: (conversationId) => set((state) => {
+    const conv = state.conversations[conversationId];
+    if (!conv || !state.dailyData) return state;
+    const selectedPapers = state.dailyData.papers.filter(p => conv.paperUrls.includes(p.url));
+    return { activeConversationId: conversationId, selectedPapers };
   }),
-  clearActiveThread: () => set((state) => {
-    const thread = state.threads[state.activeThreadId];
-    if (!thread) return state;
-    const now = Date.now();
-    return {
-      threads: {
-        ...state.threads,
-        [thread.id]: { ...thread, updatedAt: now, messages: [] },
-      },
-    };
+  addMessageToConversation: (conversationId, msg) => set((state) => {
+    const conv = state.conversations[conversationId];
+    if (!conv) return state;
+    const updated: Conversation = { ...conv, messages: [...conv.messages, msg], updatedAt: Date.now() };
+    return { conversations: { ...state.conversations, [conversationId]: updated } };
+  }),
+  appendToAssistantMessage: (conversationId, messageId, chunk) => set((state) => {
+    const conv = state.conversations[conversationId];
+    if (!conv) return state;
+    const messages = conv.messages.map((m) => (m.id === messageId ? { ...m, content: m.content + chunk } : m));
+    const updated: Conversation = { ...conv, messages, updatedAt: Date.now() };
+    return { conversations: { ...state.conversations, [conversationId]: updated } };
+  }),
+  clearConversationMessages: (conversationId) => set((state) => {
+    const conv = state.conversations[conversationId];
+    if (!conv) return state;
+    const updated: Conversation = { ...conv, messages: [], updatedAt: Date.now() };
+    return { conversations: { ...state.conversations, [conversationId]: updated } };
   }),
 }));
