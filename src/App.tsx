@@ -1,44 +1,150 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from './store/useStore';
 import { PaperList } from './components/PaperList';
 import { ChatPanel } from './components/ChatPanel';
 import { FileUp } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { loadInitialData, type FilePickerWindow } from './lib/workspace';
 
 function App() {
   const { setDailyData, hydrateWorkspace, model, setModel } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [leftWidth, setLeftWidth] = useState(420);
 
   useEffect(() => {
-    // Load the latest papers automatically when the app starts
-    const loadLatestPapers = async () => {
+    let cancelled = false;
+    loadInitialData().then((data) => {
+      // A slow startup fetch must not replace a workspace the user already opened.
+      if (!cancelled && data && !useStore.getState().dailyData) setDailyData(data);
+    });
+    return () => { cancelled = true; };
+  }, [setDailyData]);
+
+  const startResizeLeft = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = leftWidth;
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      const next = startWidth + dx;
+      const min = 320;
+      const max = Math.max(min, window.innerWidth - 360);
+      setLeftWidth(Math.min(Math.max(next, min), max));
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  useEffect(() => {
+    let timer: number | null = null;
+    let writing = false;
+    let pending = false;
+
+    const buildWorkspacePayload = () => {
+      const state = useStore.getState();
+      const orderedConversations = state.conversationOrder.map((id) => state.conversations[id]).filter(Boolean);
+      return {
+        ...(state.dailyData || {}),
+        conversations: orderedConversations,
+        conversationOrder: orderedConversations.map((c) => c.id),
+        activeConversationId: state.activeConversationId,
+      };
+    };
+
+    const writeNow = async () => {
+      const handle = useStore.getState().workspaceFileHandle;
+      if (!handle) return;
+      if (typeof handle.createWritable !== 'function') return;
+      if (writing) {
+        pending = true;
+        return;
+      }
+
+      const payload = JSON.stringify(buildWorkspacePayload(), null, 2);
+      writing = true;
       try {
-        const indexResponse = await fetch('/latest.json');
-        if (indexResponse.ok) {
-          const indexData = await indexResponse.json();
-          if (indexData.latest_file) {
-            const dataResponse = await fetch(`/${indexData.latest_file}`);
-            if (dataResponse.ok) {
-              const data = await dataResponse.json();
-              setDailyData(data);
-              return;
-            }
-          }
-        }
-        
-        // Fallback to papers.json if latest.json doesn't exist
-        const fallbackResponse = await fetch('/papers.json');
-        if (fallbackResponse.ok) {
-          const data = await fallbackResponse.json();
-          setDailyData(data);
-        }
+        const writable = await handle.createWritable();
+        await writable.write(payload);
+        await writable.close();
       } catch (err) {
-        console.error('Failed to load papers:', err);
+        console.error('Failed to write workspace JSON:', err);
+      } finally {
+        writing = false;
+        if (pending) {
+          pending = false;
+          await writeNow();
+        }
       }
     };
-    
-    loadLatestPapers();
-  }, [setDailyData]);
+
+    const unsub = useStore.subscribe((state, prevState) => {
+      if (state.workspaceFileHandle !== prevState.workspaceFileHandle) {
+        if (timer) window.clearTimeout(timer);
+        pending = false;
+        return;
+      }
+      if (!state.workspaceFileHandle) return;
+      const changed =
+        state.dailyData !== prevState.dailyData ||
+        state.conversations !== prevState.conversations ||
+        state.conversationOrder !== prevState.conversationOrder ||
+        state.activeConversationId !== prevState.activeConversationId;
+      if (!changed) return;
+
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        writeNow();
+      }, 800);
+    });
+
+    return () => {
+      unsub();
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
+
+  const handleOpenWritableJson = async () => {
+    try {
+      const pickerWindow = window as FilePickerWindow;
+      const picker = pickerWindow.showOpenFilePicker;
+      if (typeof picker !== 'function') {
+        fileInputRef.current?.click();
+        return;
+      }
+
+      const [handle] = await picker.call(pickerWindow, {
+        multiple: false,
+        mode: 'readwrite',
+        types: [
+          {
+            description: 'JSON',
+            accept: { 'application/json': ['.json'] },
+          },
+        ],
+      });
+      if (!handle) return;
+      const file = await handle.getFile();
+      const text = await file.text();
+      const json: unknown = JSON.parse(text);
+      if (!hydrateWorkspace(json, handle)) {
+        alert('JSON 文件格式不匹配，请确保是 fetch_arxiv.py 生成的当日文件或网页导出的当日 JSON 文件。');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,13 +152,11 @@ function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const json = JSON.parse(event.target?.result as string);
-        if (json.papers && json.date) {
-          hydrateWorkspace(json);
-        } else {
-          alert('JSON 文件格式不匹配，请确保是 fetch_arxiv.py 生成的文件或 RAVEN 导出的总结文件。');
+        const json: unknown = JSON.parse(event.target?.result as string);
+        if (!hydrateWorkspace(json)) {
+          alert('JSON 文件格式不匹配，请确保是 fetch_arxiv.py 生成的当日文件或网页导出的当日 JSON 文件。');
         }
-      } catch (err) {
+      } catch {
         alert('解析 JSON 文件失败，请确保文件格式正确。');
       }
     };
@@ -66,7 +170,8 @@ function App() {
       <motion.div 
         initial={{ x: -20, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        className="w-1/3 min-w-[320px] max-w-[480px] h-full flex flex-col z-20"
+        className="h-full flex flex-col z-20"
+        style={{ width: leftWidth }}
       >
         {/* App Header */}
         <div className="h-16 px-5 flex items-center justify-between bg-slate-950 border-b border-slate-800 shrink-0">
@@ -87,9 +192,9 @@ function App() {
           <div className="flex items-center gap-1">
             <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleOpenWritableJson}
               className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-slate-900 rounded-lg transition-colors"
-              title="加载本地 JSON 文件"
+              title="加载本地 JSON 文件（支持实时写回：需浏览器授权）"
             >
               <FileUp size={18} />
             </button>
@@ -113,6 +218,12 @@ function App() {
           <PaperList />
         </div>
       </motion.div>
+
+      <div
+        onPointerDown={startResizeLeft}
+        className="w-1 shrink-0 bg-slate-800/80 hover:bg-slate-700 cursor-col-resize"
+        title="拖动调整左右分栏宽度"
+      />
 
       {/* Right Chat Panel */}
       <motion.div 

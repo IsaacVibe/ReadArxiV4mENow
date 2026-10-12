@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore, ChatMessage } from '../store/useStore';
-import { Send, Bot, User, Cpu, Loader2, Info, Sparkles, X, Download } from 'lucide-react';
+import { Send, Bot, User, Cpu, Loader2, Info, Sparkles, X, Download, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { callLLM } from '../utils/llm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import { callLLM, type LLMMessage } from '../utils/llm';
 
 export function ChatPanel() {
   const { 
@@ -26,6 +28,10 @@ export function ChatPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState(true);
+  const [isGeneratingContextSummary, setIsGeneratingContextSummary] = useState(false);
+  const [isContextOpen, setIsContextOpen] = useState(true);
+  const [expandedContextUrls, setExpandedContextUrls] = useState<string[]>([]);
+  const [topHeight, setTopHeight] = useState(340);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeConversation = activeConversationId ? conversations[activeConversationId] : null;
@@ -60,13 +66,13 @@ export function ChatPanel() {
 论文列表：
 ${papersContext}`;
 
-      const apiMessages = [
+      const apiMessages: LLMMessage[] = [
         { role: 'user', content: fixedPrompt },
       ];
 
       let currentSummary = '';
       await callLLM(
-        apiMessages as any,
+        apiMessages,
         apiKey,
         baseUrl,
         model,
@@ -75,9 +81,9 @@ ${papersContext}`;
           updateDailySummary(currentSummary);
         }
       );
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
-      updateDailySummary(`**Error:** ${error.message}`);
+      updateDailySummary(`**Error:** ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsGeneratingSummary(false);
     }
@@ -102,7 +108,7 @@ ${papersContext}`;
     
     // 生成带日期的文件名
     const dateStr = dailyData.date ? dailyData.date.replace(/-/g, '') : new Date().toISOString().split('T')[0].replace(/-/g, '');
-    link.download = `RAVEN_Summary_${dateStr}.json`;
+    link.download = `RAVEN_${dateStr}.json`;
     
     document.body.appendChild(link);
     link.click();
@@ -110,46 +116,59 @@ ${papersContext}`;
     URL.revokeObjectURL(url);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    if (selectedPapers.length === 0) return;
+  const buildSystemPrompt = () => {
+    let systemPrompt = `你是一个专业的论文精读助手，负责帮助用户基于 arXiv 论文的摘要与 PDF 原文进行多轮上下文问答与深入解读。
 
-    const nextConversationId = activeConversationId || createConversationFromSelection();
-    if (!nextConversationId) return;
+规则：
+- 不要在用户未要求时主动对所有论文做“结构化总结”（例如核心内容/方法/结论三段式）。优先回答用户当前问题。
+- 回答时尽量引用对应论文编号（如 [1]、[2]），并说明信息来自摘要还是 PDF 原文。
+- 你可以直接尝试访问每篇论文提供的 PDF 外链阅读原文（如果模型能力支持联网/读取链接），以便回答更细节的问题（方法、实验设置、公式、结论、局限、对比、消融等）。
+- 如果你无法访问 PDF 或无法确认原文细节，请明确说明“未能读取 PDF 原文”，并基于摘要与已知信息给出最可靠的回答，同时建议用户如何补充信息（例如：粘贴段落/图表/公式）。`;
 
-    const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: input };
-    addMessageToConversation(nextConversationId, userMessage);
-    setInput('');
-    setIsLoading(true);
-
-    try {
-      let systemPrompt = '你是一个专业的天体物理学研究助手，负责帮助用户解读 arXiv 上的最新论文。';
-      if (selectedPapers.length > 0) {
-        systemPrompt += `\n当前用户正在阅读以下 ${selectedPapers.length} 篇论文作为上下文：\n`;
-        selectedPapers.forEach((paper, index) => {
-          systemPrompt += `
+    if (selectedPapers.length > 0) {
+      systemPrompt += `\n\n当前用户正在阅读以下 ${selectedPapers.length} 篇论文作为上下文：\n`;
+      selectedPapers.forEach((paper, index) => {
+        systemPrompt += `
 [${index + 1}] 标题：${paper.title}
 作者：${paper.authors.join(', ')}
 arXiv 链接：${paper.url}
 PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs/', '/pdf/')}
 摘要：${paper.summary}
 `;
-        });
-        systemPrompt += `\n提示：如果需要更细致的信息，你可以直接尝试读取上述论文对应的 PDF 外链进行深入理解与引用。如果用户提出问题，请优先基于这些被选中的论文信息进行解答、对比或总结。`;
-      }
+      });
+    }
 
-      const convMessages = (conversations[nextConversationId]?.messages || []).map((m) => ({ role: m.role, content: m.content }));
-      const apiMessages = [
+    return systemPrompt;
+  };
+
+  const runConversationTurn = async (content: string) => {
+    if (!content.trim()) return;
+    if (selectedPapers.length === 0) return;
+    if (isLoading) return;
+
+    const nextConversationId = activeConversationId || createConversationFromSelection();
+    if (!nextConversationId) return;
+
+    const baseMessages =
+      activeConversationId && nextConversationId === activeConversationId ? messages : [];
+
+    const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content };
+    addMessageToConversation(nextConversationId, userMessage);
+    setIsLoading(true);
+
+    try {
+      const systemPrompt = buildSystemPrompt();
+      const apiMessages: LLMMessage[] = [
         { role: 'system', content: systemPrompt },
-        ...convMessages,
+        ...baseMessages.map((m) => ({ role: m.role, content: m.content })),
+        { role: 'user', content },
       ];
 
       const assistantMessageId = (Date.now() + 1).toString();
       addMessageToConversation(nextConversationId, { id: assistantMessageId, role: 'assistant', content: '' });
 
       await callLLM(
-        apiMessages as any,
+        apiMessages,
         apiKey,
         baseUrl,
         model,
@@ -157,12 +176,86 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
           appendToAssistantMessage(nextConversationId, assistantMessageId, chunk);
         }
       );
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
-      addMessageToConversation(nextConversationId, { id: Date.now().toString(), role: 'assistant', content: `**Error:** ${error.message}` });
+      addMessageToConversation(nextConversationId, { id: Date.now().toString(), role: 'assistant', content: `**Error:** ${error instanceof Error ? error.message : String(error)}` });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+    if (selectedPapers.length === 0) return;
+
+    const content = input;
+    setInput('');
+    await runConversationTurn(content);
+  };
+
+  const handleContextSummary = async () => {
+    if (selectedPapers.length === 0) return;
+    if (isLoading || isGeneratingContextSummary) return;
+    setIsGeneratingContextSummary(true);
+    try {
+      const prompt = `请对我已选中的论文逐篇做一个“精读级别”的概览，格式固定为：
+
+对每篇论文输出：
+- 研究问题（1-2 句）
+- 方法（要点列表）
+- 关键结论（要点列表）
+- 局限/假设（要点列表）
+- 我接下来可以问你的 3 个深入问题（问题列表）
+
+如果你能读取 PDF 原文，请优先引用原文细节；如果无法读取 PDF，请明确说明并仅基于摘要回答。`;
+      await runConversationTurn(prompt);
+    } finally {
+      setIsGeneratingContextSummary(false);
+    }
+  };
+
+  const toggleContextUrl = (url: string) => {
+    setExpandedContextUrls((prev) => {
+      if (prev.includes(url)) return prev.filter((u) => u !== url);
+      return [...prev, url];
+    });
+  };
+
+  const hasLatex = (text: string) => {
+    if (!text) return false;
+    if (/\$\$[\s\S]*?\$\$/.test(text)) return true;
+    if (/\$[^$\n]+\$/.test(text)) return true;
+    if (/\\\(|\\\)|\\\[|\\\]/.test(text)) return true;
+    if (/\\begin\{[a-zA-Z*]+\}/.test(text)) return true;
+    return false;
+  };
+
+  const startResizeTop = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = topHeight;
+
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: PointerEvent) => {
+      const dy = ev.clientY - startY;
+      const next = startHeight + dy;
+      const min = 220;
+      const max = 620;
+      setTopHeight(Math.min(Math.max(next, min), max));
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   };
 
   return (
@@ -172,7 +265,10 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Header */}
-      <div className="p-5 border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-xl sticky top-0 z-10 flex flex-col gap-3 shrink-0">
+      <div
+        className="p-5 border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-xl z-10 flex flex-col gap-3 shrink-0 overflow-y-auto custom-scrollbar"
+        style={{ height: topHeight }}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
@@ -187,6 +283,17 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
           </div>
           {dailyData && (
             <div className="flex gap-2">
+              {selectedPapers.length > 0 && (
+                <button
+                  onClick={handleContextSummary}
+                  disabled={isLoading || isGeneratingContextSummary}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-300 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+                  title="把已选论文的结构化精读总结写入对话，便于继续追问"
+                >
+                  {(isLoading || isGeneratingContextSummary) ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  总结上下文
+                </button>
+              )}
               <button
                 onClick={() => {
                   if (dailyData.dailySummary && !isGeneratingSummary) {
@@ -204,10 +311,10 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
               <button
                 onClick={handleExportSummaries}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-slate-300 text-xs font-medium rounded-lg transition-colors"
-                title="一键导出包含 AI 总结的 JSON 数据文件"
+                title="导出当日 JSON（包含一句话总结/上下文对话/今日亮点总结）"
               >
                 <Download size={14} />
-                <span className="hidden xl:inline">导出总结数据</span>
+                <span className="hidden xl:inline">导出当日 JSON</span>
               </button>
             </div>
           )}
@@ -236,7 +343,9 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
                 </div>
               </div>
               <div className="text-sm text-slate-300 prose prose-invert prose-p:leading-relaxed prose-sm max-w-none max-h-48 overflow-y-auto custom-scrollbar pr-2">
-                <ReactMarkdown>{dailyData.dailySummary}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                  {dailyData.dailySummary}
+                </ReactMarkdown>
               </div>
             </motion.div>
           )}
@@ -251,33 +360,113 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
               className="p-3 rounded-lg bg-slate-800/40 border border-slate-700/50 text-xs flex flex-col gap-2 overflow-hidden"
             >
               <div className="flex items-start justify-between gap-2 text-slate-300">
-                <div className="flex items-center gap-1.5 font-medium leading-relaxed">
-                  <Info size={14} className="text-blue-400 shrink-0" />
-                  当前已选中 {selectedPapers.length} 篇论文作为上下文：
-                </div>
                 <button
-                  onClick={clearSelectedPapers}
-                  className="text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1"
+                  type="button"
+                  onClick={() => setIsContextOpen((v) => !v)}
+                  className="flex items-center gap-1.5 font-medium leading-relaxed text-left hover:text-slate-100 transition-colors"
+                  title={isContextOpen ? '收起上下文' : '展开上下文'}
                 >
-                  <X size={12} /> 清空
+                  <Info size={14} className="text-blue-400 shrink-0" />
+                  <span>上下文论文 ({selectedPapers.length})</span>
+                  {isContextOpen ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
                 </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsContextOpen((v) => !v)}
+                    className="text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {isContextOpen ? '隐藏' : '显示'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearSelectedPapers}
+                    className="text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1"
+                  >
+                    <X size={12} /> 清空
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5 pl-5 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                {selectedPapers.map((paper, idx) => (
-                  <div key={paper.url} className="flex items-center justify-between gap-2 group">
-                    <a href={paper.url} target="_blank" rel="noreferrer" className="truncate text-slate-400 hover:text-blue-400 transition-colors font-mono underline decoration-slate-700 underline-offset-2">
-                      [{idx + 1}] {paper.title}
-                    </a>
-                    <button
-                      onClick={() => togglePaperSelection(paper)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition-all rounded-md hover:bg-slate-800/50"
-                      title="移除此篇"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <AnimatePresence mode="popLayout">
+                {isContextOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex flex-col gap-2 pl-5 max-h-64 overflow-y-auto pr-2 custom-scrollbar"
+                  >
+                    {selectedPapers.map((paper, idx) => {
+                      const isExpanded = expandedContextUrls.includes(paper.url);
+                      const categories = paper.categories.join(', ');
+                      return (
+                        <div key={paper.url} className="rounded-lg border border-slate-800/80 bg-slate-950/40 p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <a
+                                href={paper.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block text-slate-300 hover:text-blue-300 transition-colors font-medium leading-snug"
+                              >
+                                [{idx + 1}] {paper.title}
+                              </a>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => toggleContextUrl(paper.url)}
+                                className="p-1 text-slate-500 hover:text-slate-200 transition-colors rounded-md hover:bg-slate-800/50"
+                                title={isExpanded ? '收起详情' : '展开详情'}
+                              >
+                                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => togglePaperSelection(paper)}
+                                className="p-1 text-slate-500 hover:text-red-400 transition-colors rounded-md hover:bg-slate-800/50"
+                                title="移除此篇"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 text-[11px] text-slate-500 font-mono leading-relaxed">
+                            <div className="line-clamp-2">
+                              {paper.authors.join(', ')}
+                            </div>
+                            {categories && (
+                              <div className="mt-1">
+                                领域：{categories}
+                              </div>
+                            )}
+                          </div>
+
+                          {isExpanded ? (
+                            <div className="mt-2 text-[15px] text-slate-300 leading-relaxed">
+                              <div className="text-[11px] text-slate-500 font-mono mb-1">摘要：</div>
+                              {hasLatex(paper.summary) ? (
+                                <div className="prose prose-invert max-w-none">
+                                  <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                    {paper.summary}
+                                  </ReactMarkdown>
+                                </div>
+                              ) : (
+                                <div className="whitespace-pre-wrap">{paper.summary}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="mt-2 text-[15px] text-slate-300 leading-relaxed line-clamp-3">
+                              <span className="text-[11px] text-slate-500 font-mono mr-2">摘要：</span>
+                              {paper.summary}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           ) : (
             <motion.div
@@ -290,6 +479,12 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
           )}
         </AnimatePresence>
       </div>
+
+      <div
+        onPointerDown={startResizeTop}
+        className="h-1.5 shrink-0 bg-slate-800/80 hover:bg-slate-700 cursor-row-resize"
+        title="拖动调整右侧上下分区高度"
+      />
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6 z-0">
@@ -328,7 +523,9 @@ PDF 外链：${paper.url.includes('/pdf/') ? paper.url : paper.url.replace('/abs
               {msg.role === 'user' ? (
                 msg.content
               ) : (
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                  {msg.content}
+                </ReactMarkdown>
               )}
             </div>
           </motion.div>

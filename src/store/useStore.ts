@@ -1,37 +1,7 @@
 import { create } from 'zustand';
 
-export interface Paper {
-  title: string;
-  authors: string[];
-  summary: string;
-  categories: string[];
-  url: string;
-  aiSummary?: string;
-}
-
-export interface DailyData {
-  date: string;
-  total: number;
-  subjects_counter: Record<string, number>;
-  papers: Paper[];
-  dailySummary?: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  isDailySummary?: boolean;
-}
-
-export interface Conversation {
-  id: string;
-  title: string;
-  paperUrls: string[];
-  messages: ChatMessage[];
-  createdAt: number;
-  updatedAt: number;
-}
+import { parseWorkspace, type Paper, type DailyData, type ChatMessage, type Conversation } from '../lib/workspace';
+export type { Paper, DailyData, ChatMessage, Conversation } from '../lib/workspace';
 
 interface AppState {
   // Settings - Read directly from .env, completely fixed and read-only at runtime
@@ -40,10 +10,13 @@ interface AppState {
   model: string;
   setModel: (model: string) => void;
 
+  // Workspace persistence
+  workspaceFileHandle: FileSystemFileHandle | null;
+
   // Data
   dailyData: DailyData | null;
   setDailyData: (data: DailyData) => void;
-  hydrateWorkspace: (payload: any) => void;
+  hydrateWorkspace: (payload: unknown, handle?: FileSystemFileHandle | null) => boolean;
   updateDailySummary: (summary: string) => void;
   updatePaperAiSummary: (url: string, aiSummary: string) => void;
   selectedPapers: Paper[];
@@ -69,6 +42,8 @@ export const useStore = create<AppState>((set) => ({
   model: import.meta.env.VITE_LLM_MODEL || 'gpt-3.5-turbo',
   setModel: (model) => set({ model }),
 
+  workspaceFileHandle: null,
+
   // Data
   dailyData: null,
   setDailyData: (data) => set(() => ({
@@ -77,60 +52,20 @@ export const useStore = create<AppState>((set) => ({
     conversations: {},
     conversationOrder: [],
     activeConversationId: null,
+    workspaceFileHandle: null,
   })),
-  hydrateWorkspace: (payload) => set(() => {
-    if (!payload || !payload.papers || !payload.date) {
-      return {};
-    }
-
-    const dailyData: DailyData = {
-      date: payload.date,
-      total: payload.total ?? (Array.isArray(payload.papers) ? payload.papers.length : 0),
-      subjects_counter: payload.subjects_counter ?? {},
-      papers: payload.papers,
-      dailySummary: payload.dailySummary,
-    };
-
-    const conversationsArray: any[] = Array.isArray(payload.conversations) ? payload.conversations : [];
-    const conversations: Record<string, Conversation> = {};
-    const conversationOrderFromPayload: any[] = Array.isArray(payload.conversationOrder) ? payload.conversationOrder : [];
-    const conversationOrder: string[] = [];
-
-    conversationsArray.forEach((c) => {
-      if (!c || typeof c.id !== 'string' || !Array.isArray(c.paperUrls) || !Array.isArray(c.messages)) return;
-      const conv: Conversation = {
-        id: c.id,
-        title: typeof c.title === 'string' ? c.title : c.id,
-        paperUrls: c.paperUrls,
-        messages: c.messages,
-        createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
-        updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
-      };
-      conversations[conv.id] = conv;
-    });
-
-    conversationOrderFromPayload.forEach((id) => {
-      if (typeof id !== 'string') return;
-      if (conversations[id]) conversationOrder.push(id);
-    });
-    if (conversationOrder.length === 0) {
-      Object.keys(conversations).forEach((id) => conversationOrder.push(id));
-    }
-
-    const activeConversationId = typeof payload.activeConversationId === 'string' ? payload.activeConversationId : null;
-    const selectedPapers =
-      activeConversationId && conversations[activeConversationId]
-        ? dailyData.papers.filter((p) => conversations[activeConversationId].paperUrls.includes(p.url))
-        : [];
-
-    return {
-      dailyData,
-      selectedPapers,
-      conversations,
-      conversationOrder,
-      activeConversationId,
-    };
-  }),
+  hydrateWorkspace: (payload, handle = null) => {
+    const workspace = parseWorkspace(payload);
+    if (!workspace) return false;
+    const { conversations: items, conversationOrder, activeConversationId, ...dailyData } = workspace;
+    const conversations = Object.fromEntries(items.map((conversation) => [conversation.id, conversation]));
+    const selectedPapers = activeConversationId
+      ? dailyData.papers.filter((paper) => conversations[activeConversationId].paperUrls.includes(paper.url))
+      : [];
+    // Switch data and its write target together, so imports never write to the previous file.
+    set({ dailyData, conversations, conversationOrder, activeConversationId, selectedPapers, workspaceFileHandle: handle });
+    return true;
+  },
   updateDailySummary: (summary) => set((state) => ({
     dailyData: state.dailyData ? { ...state.dailyData, dailySummary: summary } : null
   })),

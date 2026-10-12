@@ -1,5 +1,10 @@
+export interface LLMMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
 export async function callLLM(
-  messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
+  messages: LLMMessage[],
   apiKey: string,
   baseUrl: string,
   model: string,
@@ -62,7 +67,7 @@ export async function callLLM(
           if (content) {
             onChunk(content);
           }
-        } catch (e) {
+        } catch {
           // ignore parsing error for partial chunks
         }
       }

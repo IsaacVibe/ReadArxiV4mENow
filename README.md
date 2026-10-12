@@ -1,98 +1,87 @@
-# 🚀 RAVEN (arXiv 论文解读助手)
+# RAVEN — Read ArxiV 4 mE Now
 
-嘿！这是一个我个人用来**每天自动抓取 arXiv 天体物理学（astro-ph）最新论文**，并结合**大语言模型（LLM）进行智能解读**的纯前端可视化小工具。
+本地运行的 arXiv 天体物理论文阅读助手：Python 抓取公开论文，React 前端支持搜索、分类、多选、公式渲染和多轮 AI 对话。
 
-受够了每天在终端里或者简陋的 RSS 阅读器里看枯燥的论文摘要了吗？这个项目提供了一个高颜值、极客风的本地网页，你可以直接在左侧浏览当天的论文列表，选中你感兴趣的（甚至支持多选！），然后让右侧的 AI 助手帮你精读、总结或者对比！
+## 快速开始
 
-***
-
-## ✨ 核心亮点
-
-- **自动抓取最新数据**：内置 Python 脚本，一键从 arXiv RSS 拉取当天最新发布的天体物理学论文（自动过滤掉那些只是稍微改了改的旧文章）。
-- **纯前端架构，数据全在本地**：抓取完会生成 `papers.json` 供网页读取，没有任何后端数据库，轻量级。
-- **灵活的 AI 上下文**：
-  - 点击左侧论文即可将其加入右侧的 AI 对话上下文（支持选中多篇一起问！）。
-  - 支持一键“总结今日亮点”，让 AI 快速挑出 3-5 篇最值得看的突破性文章。
-- **兼容任意大模型**：无论你是用 OpenAI 的 GPT-4o，还是本地部署的 Ollama，只要是兼容 OpenAI 接口格式的模型，填个地址就能跑！
-
-***
-
-## 🛠️ 如何跑起来？
-
-这个项目分为两部分：**Python 抓取脚本** 和 **React 前端网页**。
-
-### 1. 环境准备
-
-- 确保你的电脑里装了 **Python 3**（用来跑抓取脚本）。
-- 确保你装了 **Node.js** 和 **npm**（用来跑前端网页）。
-
-### 2. 抓取今天的论文
-
-打开终端，进入项目目录，运行以下命令抓取数据：
+需要 Node.js 20.19+（或 22.12+）及 Python 3.9+。
 
 ```bash
-python fetch_arxiv.py
-```
-
-> 运行成功后，你会在 `public/` 目录下看到一个新鲜出炉的 `papers.json`，同时根目录下也会生成一份 Markdown 格式的备份。
-
-### 3. 配置你的大模型 API 🔑 (非常重要！)
-
-为了安全起见，**包含你 API Key 的配置文件** **`.env`** **是被** **`.gitignore`** **忽略的，绝对不会被上传到 GitHub！**
-
-所以，当你克隆（Clone）这个项目到本地后，你需要**手动在项目根目录创建一个** **`.env`** **文件**。
-
-新建 `.env` 文件，并填入你的配置（下面是示例）：
-
-```env
-# 你的 API Key (例如 sk-xxxx)
-VITE_LLM_API_KEY=你的密钥填这里
-
-# API 的 Base URL (如果是 OpenAI 默认是 https://api.openai.com/v1)
-# 如果你用本地模型比如 Ollama，填类似于 http://localhost:11434/v1
-VITE_LLM_BASE_URL=https://api.openai.com/v1
-
-# 使用的模型名称 (例如 gpt-3.5-turbo, deepseek-chat 等)
-VITE_LLM_MODEL=gpt-3.5-turbo
-```
-
-*💡 提示：如果你的本地模型（比如部分 Ollama 设置）不需要 API Key，`VITE_LLM_API_KEY`* *留空即可，程序会自动兼容无 Key 请求。*
-
-### 4. 启动网页！
-
-装好依赖，跑起来：
-
-```bash
-npm install
+npm ci
+cp env.example .env
 npm run dev
 ```
 
-然后打开浏览器访问 `http://localhost:5173/` 就可以开始愉快地和 AI 一起读论文啦！
+打开终端显示的本地地址（默认 http://localhost:5173/）。未抓取数据时，页面展示 3 篇公开论文示例，不需要 API Key。
 
-***
+需要 AI 功能时，在本地 `.env` 中填写兼容 Chat Completions 的模型服务地址、模型名称和密钥。默认示例指向本地模型服务，密钥留空；服务需要允许浏览器跨域请求。修改 `.env` 后重启开发服务器。网页中可临时切换模型名称。
 
-## 🍎 Mac 用户的终极偷懒技巧 (一键启动 App)
+`.env` 不提交到 Git。`VITE_*` 配置会进入浏览器代码，因此真实密钥只用于个人本地运行；不要公开带有真实密钥的构建产物。
 
-如果你和我一样用的是 Mac，并且觉得每次都要敲命令太麻烦了，项目里其实包含了一个一键启动脚本。
+## 抓取论文
 
-你可以直接双击运行项目里的 **`ArxivExplorer.app`**（如果它失效了，你可以通过终端运行 `osacompile -o ArxivExplorer.app ArxivExplorer.applescript` 重新编译一个）。
-
-双击它之后，它会自动在后台帮你：
-
-1. 运行 Python 抓最新论文
-2. 启动 Vite 前端服务
-3. 自动打开你的默认浏览器跳转到网页
-   每天早上点一下，一杯咖啡的时间，今天的科研动态和 AI 助手就全准备好了！
-
-***
-
-## 🤝 关于提交代码 (Git Push)
-
-如果你想 Fork 或者修改这个项目并推送到自己的 GitHub，请放心使用：
+先安装 Python 依赖：
 
 ```bash
-git add .
-git commit -m "你的修改"
-git push
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
 ```
 
+在项目根目录运行：
+
+```bash
+# 从列表页抓取最新 astro-ph 论文，批量获取摘要
+python3 fetch_arxiv_list.py
+
+# 使用 RSS 抓取
+python3 fetch_arxiv.py
+
+# 按日期抓取：日期必须出现在 arXiv 的 pastweek 列表中
+python3 fetch_arxiv_list.py --date 20260928
+
+# 抓取指定论文
+python3 fetch_arxiv_ids.py 2402.07716 2503.23047
+```
+
+每日输出位于 `public/archive/YYYYMM/`，包含 `RAVEN_YYYYMMDD.json` 和 `astroph_YYYY-MM-DD.md`。`public/latest.json` 记录最新文件位置。指定 ID 的默认输出位于 `public/RAVEN_IDS_*.json`，可用 `--update-latest` 更新索引。JSON 可直接通过网页导入。
+
+如果同一天的新版或旧版 JSON/Markdown 已存在，每日抓取会跳过，保留手动编辑和已保存的对话。`--date` 不是任意历史日期查询；缺失日期不会生成数据。默认 API 批量请求失败时可能留下空摘要，必要时可使用 `--no-api` 改为逐篇请求；已有输出仍需自行保存并处理后才能重新抓取。
+
+证书验证默认开启，支持 `--ca-bundle` 或 `RAVEN_SSL_CA_BUNDLE` 指定证书。全部选项见各脚本的 `--help`。
+
+## 阅读与保存
+
+- 按关键词或分类筛选，按序号或主题浏览，选择多篇论文作为对话上下文。
+- 生成单篇简短摘要、每日亮点或所选论文概览；聊天支持 Markdown 和数学公式。
+- 调整左右分栏和上下区域大小；从上下文列表切换已保存的对话。
+- 导出 JSON 保存论文、AI 摘要及对话；再次导入可继续阅读。
+- 支持文件读写 API 的浏览器可授权打开本地 JSON，后续修改约 800 ms 后写回该文件。其他浏览器使用上传导入和手动导出。
+
+启动加载顺序为：最新索引指向的数据 → 旧版 `public/papers.json` → `public/example-papers.json`。缺失、无效 JSON 或数据格式错误都会继续回退。
+
+## macOS 启动器
+
+完成依赖安装后，可以运行 `./start_app.sh`。脚本优先使用 `.venv` 中的 Python，尝试抓取、更新最新索引、启动前端并打开浏览器。
+
+也可以在项目根目录编译启动器：
+
+```bash
+osacompile -o ArxivExplorer.app ArxivExplorer.applescript
+```
+
+将生成的 `.app` 保留在 `start_app.sh` 旁边，双击启动。路径由应用所在目录推导，不依赖个人目录。编译产物不提交到仓库。
+
+## 验证与版本管理
+
+```bash
+npm run check
+npm run lint
+npm test
+npm run build
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+仓库仅保留源码、锁文件、静态图片和最小公开示例。唯一允许跟踪的隐藏文件是根目录 `.gitignore`；其他隐藏文件、隐藏目录、抓取缓存、历史论文、个人对话、运行时索引及构建产物均留在本地。既有 Git 历史未被重写。
+
+提交时按文件选择，先检查暂存区，不使用 `git add -f` 绕过忽略规则。删除版本跟踪不等于清除 Git 历史；请始终确认新提交不含密钥或个人数据。
