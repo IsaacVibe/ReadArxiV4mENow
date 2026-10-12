@@ -11,6 +11,8 @@ from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
 import socket
 import http.client
+import ssl
+from typing import Optional
 
 
 class ArxivAbsPageParser(HTMLParser):
@@ -204,12 +206,38 @@ def fetch_bytes(opener, url: str, max_retries: int = 6, timeout: int = 30) -> by
     raise RuntimeError(f"Max retries exceeded: {last_err}")
 
 
-def normalize_arxiv_id(s: str) -> str | None:
+def normalize_arxiv_id(s: str) -> Optional[str]:
     s = s.strip()
     m = re.match(r'^(\d{4}\.\d{5})(v\d+)?$', s)
     if m:
         return m.group(1)
     return None
+
+
+def resolve_ca_bundle_path(cli_ca_bundle: Optional[str]) -> Optional[str]:
+    if cli_ca_bundle:
+        return cli_ca_bundle
+    env_path = os.environ.get('RAVEN_SSL_CA_BUNDLE') or os.environ.get('SSL_CERT_FILE')
+    if env_path:
+        return env_path
+    try:
+        import certifi
+        return certifi.where()
+    except Exception:
+        return None
+
+
+def create_ssl_context(ca_bundle_path: Optional[str], insecure: bool) -> ssl.SSLContext:
+    if insecure:
+        return ssl._create_unverified_context()
+    if ca_bundle_path:
+        return ssl.create_default_context(cafile=ca_bundle_path)
+    return ssl.create_default_context()
+
+
+def create_opener(ca_bundle_path: Optional[str], insecure: bool):
+    ctx = create_ssl_context(ca_bundle_path, insecure)
+    return urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
 
 
 def read_ids_from_file(path: str) -> list[str]:
@@ -223,8 +251,8 @@ def read_ids_from_file(path: str) -> list[str]:
     return ids
 
 
-def fetch_papers_by_ids(arxiv_ids: list[str], delay_base_s: float = 1.2, delay_jitter_s: float = 0.8, max_retries: int = 6, timeout: int = 30):
-    opener = urllib.request.build_opener()
+def fetch_papers_by_ids(arxiv_ids: list[str], delay_base_s: float = 1.2, delay_jitter_s: float = 0.8, max_retries: int = 6, timeout: int = 30, ca_bundle: Optional[str] = None, insecure: bool = False):
+    opener = create_opener(ca_bundle, insecure)
 
     papers = []
     subjects_counter = collections.Counter()
@@ -285,6 +313,8 @@ def main():
     ap.add_argument('--timeout', type=int, default=30)
     ap.add_argument('--out', type=str, default=None)
     ap.add_argument('--update-latest', action='store_true')
+    ap.add_argument('--ca-bundle', type=str, default=None)
+    ap.add_argument('--insecure', action='store_true')
     args = ap.parse_args()
 
     raw_ids = list(args.ids)
@@ -307,12 +337,15 @@ def main():
     if not arxiv_ids:
         raise SystemExit("No valid arXiv IDs provided. Example: python fetch_arxiv_ids.py 2604.03283 2604.22105")
 
+    ca_bundle = resolve_ca_bundle_path(args.ca_bundle)
     papers, subjects_counter = fetch_papers_by_ids(
         arxiv_ids,
         delay_base_s=args.delay_base,
         delay_jitter_s=args.delay_jitter,
         max_retries=args.max_retries,
         timeout=args.timeout,
+        ca_bundle=ca_bundle,
+        insecure=args.insecure,
     )
 
     today = datetime.datetime.now().strftime('%Y-%m-%d')

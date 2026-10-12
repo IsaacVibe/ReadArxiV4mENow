@@ -7,8 +7,74 @@ import os
 import time
 import json
 import email.utils
+import ssl
+import argparse
+from typing import Optional
 
-def fetch_latest_arxiv():
+def parse_cli_date_yyyymmdd(s: Optional[str]) -> Optional[str]:
+    if not s:
+        return None
+    t = s.strip()
+    if not t.isdigit() or len(t) != 8:
+        return None
+    try:
+        return datetime.datetime.strptime(t, '%Y%m%d').strftime('%Y-%m-%d')
+    except Exception:
+        return None
+
+
+def get_output_paths(date_ymd: str):
+    date_obj = datetime.datetime.strptime(date_ymd, '%Y-%m-%d')
+    yyyymm = date_obj.strftime('%Y%m')
+    yyyymmdd = date_obj.strftime('%Y%m%d')
+    out_dir = os.path.join('public', 'archive', yyyymm)
+    md_filename = os.path.join(out_dir, f'astroph_{date_ymd}.md')
+    json_filename = os.path.join(out_dir, f'RAVEN_{yyyymmdd}.json')
+    rel_json = os.path.join('archive', yyyymm, f'RAVEN_{yyyymmdd}.json')
+    return out_dir, md_filename, json_filename, rel_json
+
+
+def outputs_exist(date_ymd: str) -> bool:
+    try:
+        out_dir, md_filename, json_filename, _rel = get_output_paths(date_ymd)
+    except Exception:
+        return False
+    legacy_md = f'astroph_{date_ymd}.md'
+    legacy_json = os.path.join('public', f'RAVEN_{datetime.datetime.strptime(date_ymd, "%Y-%m-%d").strftime("%Y%m%d")}.json')
+    return (
+        os.path.exists(md_filename)
+        or os.path.exists(json_filename)
+        or os.path.exists(legacy_md)
+        or os.path.exists(legacy_json)
+    )
+
+def resolve_ca_bundle_path(cli_ca_bundle: Optional[str]) -> Optional[str]:
+    if cli_ca_bundle:
+        return cli_ca_bundle
+    env_path = os.environ.get('RAVEN_SSL_CA_BUNDLE') or os.environ.get('SSL_CERT_FILE')
+    if env_path:
+        return env_path
+    try:
+        import certifi
+        return certifi.where()
+    except Exception:
+        return None
+
+
+def create_ssl_context(ca_bundle_path: Optional[str], insecure: bool) -> ssl.SSLContext:
+    if insecure:
+        return ssl._create_unverified_context()
+    if ca_bundle_path:
+        return ssl.create_default_context(cafile=ca_bundle_path)
+    return ssl.create_default_context()
+
+
+def build_https_opener(ca_bundle_path: Optional[str], insecure: bool):
+    ctx = create_ssl_context(ca_bundle_path, insecure)
+    return urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
+
+
+def fetch_latest_arxiv(opener):
     # 使用 arXiv RSS 获取最新的 astro-ph 每日更新论文
     url = 'https://rss.arxiv.org/rss/astro-ph'
     print(f"Fetching daily updates from arXiv RSS...")
@@ -23,7 +89,7 @@ def fetch_latest_arxiv():
     
     for attempt in range(max_retries):
         try:
-            with urllib.request.urlopen(req) as response:
+            with opener.open(req) as response:
                 xml_data = response.read()
             break
         except HTTPError as e:
@@ -100,7 +166,11 @@ def save_to_markdown_and_json(papers, subjects_counter, latest_date):
         return
 
     # 保存为 Markdown
-    md_filename = f'astroph_{latest_date}.md'
+    if outputs_exist(latest_date):
+        print(f"Skip: outputs already exist for {latest_date}.")
+        return
+    out_dir, md_filename, json_filename, rel_json = get_output_paths(latest_date)
+    os.makedirs(out_dir, exist_ok=True)
     with open(md_filename, 'w', encoding='utf-8') as f:
         f.write(f'# arXiv astro-ph 最新论文汇总 ({latest_date})\n\n')
         f.write(f"**生成时间:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -123,11 +193,6 @@ def save_to_markdown_and_json(papers, subjects_counter, latest_date):
     print(f"Successfully saved {len(papers)} papers for {latest_date} to {md_filename}.")
     
     # 保存为 JSON，供前端 Web App 使用
-    date_str = datetime.datetime.strptime(latest_date, '%Y-%m-%d').strftime('%Y%m%d')
-    json_filename = os.path.join('public', f'RAVEN_{date_str}.json')
-    # 确保 public 目录存在
-    os.makedirs('public', exist_ok=True)
-    
     data = {
         "date": latest_date,
         "total": len(papers),
@@ -142,7 +207,7 @@ def save_to_markdown_and_json(papers, subjects_counter, latest_date):
     # 将最新的文件名写入一个索引文件，供前端应用启动时读取
     index_filename = os.path.join('public', 'latest.json')
     with open(index_filename, 'w', encoding='utf-8') as f:
-        json.dump({"latest_file": f'RAVEN_{date_str}.json'}, f)
+        json.dump({"latest_file": rel_json}, f)
 
     print("\n" + "="*50)
     print("【下一步操作指南】")
@@ -151,5 +216,41 @@ def save_to_markdown_and_json(papers, subjects_counter, latest_date):
     print("="*50 + "\n")
 
 if __name__ == '__main__':
-    papers, counter, latest_date = fetch_latest_arxiv()
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--date', type=str, default=None, help='YYYYMMDD, e.g. 20260429')
+    ap.add_argument('--ca-bundle', type=str, default=None)
+    ap.add_argument('--insecure', action='store_true')
+    args = ap.parse_args()
+
+    ca_bundle = resolve_ca_bundle_path(args.ca_bundle)
+    opener = build_https_opener(ca_bundle, args.insecure)
+
+    target_date = parse_cli_date_yyyymmdd(args.date)
+    if args.date and not target_date:
+        raise SystemExit("Invalid --date. Expected YYYYMMDD, e.g. 20260429")
+
+    if target_date and outputs_exist(target_date):
+        print(f"Skip: outputs already exist for {target_date}.")
+        raise SystemExit(0)
+
+    if target_date:
+        from fetch_arxiv_list import fetch_latest_from_list
+        papers, counter, latest_date = fetch_latest_from_list(
+            target_date=target_date,
+            max_papers=None,
+            delay_base_s=1.2,
+            delay_jitter_s=0.8,
+            max_retries=6,
+            timeout=30,
+            cache_dir='.cache_raven_arxiv',
+            use_cache=True,
+            resume=True,
+            ca_bundle=ca_bundle,
+            insecure=args.insecure,
+        )
+    else:
+        papers, counter, latest_date = fetch_latest_arxiv(opener)
+        if outputs_exist(latest_date):
+            print(f"Skip: outputs already exist for {latest_date}.")
+            raise SystemExit(0)
     save_to_markdown_and_json(papers, counter, latest_date)
