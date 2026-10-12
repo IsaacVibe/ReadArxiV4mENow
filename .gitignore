@@ -1,27 +1,29 @@
-# Logs
-logs
+# Hidden files/directories stay local. Only this root policy is versioned.
+.*
+!/.gitignore
+
+# Dependencies, builds, logs, and editor backups
+node_modules/
+dist/
+dist-ssr/
+logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
 *.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
+*.sw?
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
-# Local env files
-.env
-.env.local
+__pycache__/
+*.py[cod]
+*.app/
+
+# Scraped data and saved conversations (keep the explicit public example)
+/public/archive/
+/public/RAVEN_*.json
+/public/latest.json
+/public/papers.json
+/RAVEN_*.json
+/astroph_*.md
+/latest_arxiv_astro_ph.md
+/arxiv_results.xml
