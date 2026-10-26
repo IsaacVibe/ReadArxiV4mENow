@@ -27,3 +27,7 @@ __pycache__/
 /astroph_*.md
 /latest_arxiv_astro_ph.md
 /arxiv_results.xml
+
+# Local research arrays and generated shortcuts
+*.npy
+*.shortcut

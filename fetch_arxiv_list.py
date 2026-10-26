@@ -569,7 +569,8 @@ def fetch_latest_from_list(
         abs_url = f'https://arxiv.org/abs/{arxiv_id}'
 
         summary = cached_summary.get(arxiv_id, '')
-        if summary == '' and not use_api:
+        # API 批量失败/被限流时，只要缺摘要就回退到逐篇 /abs 页面抓取
+        if summary == '':
             delay_s = normalize_delay_s(delay_base_s, delay_jitter_s)
             if delay_s > 0:
                 time.sleep(delay_s)

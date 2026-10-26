@@ -1,0 +1,21 @@
+# =============================================================================
+# RAVEN 自动抓取任务 —— Linux / 类 Unix 的 cron 写法
+#
+# macOS 请使用 automation/install.sh 安装 launchd 任务（推荐，休眠唤醒后会补跑）。
+# 本文件仅作为 Linux/服务器环境的替代方案参考。
+#
+# 安装方法：
+#   1. 把下面两行（CRON_TZ 与 30 10 * * 1-5 ...）追加到 `crontab -e` 中；
+#   2. 把路径改成你本机的项目绝对路径（示例用 $HOME/Desktop/DailyArxiv）；
+#   3. 保存退出后可用 `crontab -l` 确认。
+#
+# 注意：
+#   - CRON_TZ 是 cronie 的扩展；若你的 cron 不支持，请把系统时区设为
+#     Asia/Shanghai，否则 10:30 会按系统时区触发；
+#   - cron 不会补跑休眠期间错过的任务，对笔记本不如 macOS launchd 可靠。
+# =============================================================================
+
+CRON_TZ=Asia/Shanghai
+
+# 每周一至周五 10:30（北京时间）自动抓取
+30 10 * * 1-5 cd "$HOME/Desktop/DailyArxiv" && /bin/bash automation/run_daily.sh >> logs/cron.log 2>&1
