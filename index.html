@@ -1,9 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/raven.png" />
+    <link rel="icon" type="image/svg+xml" href="/raven-mark.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      try {
+        const theme = localStorage.getItem('raven-theme');
+        const dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      } catch { /* The default light theme also works without local storage. */ }
+    </script>
     <title>Read ArxiV 4 mE Now (RAVEN)</title>
     <script type="module">
       if (import.meta.hot?.on) {
@@ -16,21 +24,6 @@
         })
       }
     </script>
-    <style>
-      .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: rgba(148, 163, 184, 0.2);
-        border-radius: 10px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: rgba(148, 163, 184, 0.4);
-      }
-    </style>
   </head>
   <body>
     <div id="root"></div>

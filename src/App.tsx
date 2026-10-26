@@ -1,241 +1,44 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { Bird, BookOpen, Info, Download, FolderOpen, LayoutList, Moon, Settings2, Sun, X } from 'lucide-react';
 import { useStore } from './store/useStore';
 import { PaperList } from './components/PaperList';
 import { ChatPanel } from './components/ChatPanel';
-import { FileUp } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { loadInitialData, type FilePickerWindow } from './lib/workspace';
+import { useTheme } from './hooks/useTheme';
+import { useWorkspace } from './hooks/useWorkspace';
+import { exportWorkspace } from './utils/workspace';
 
 function App() {
-  const { setDailyData, hydrateWorkspace, model, setModel } = useStore();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [leftWidth, setLeftWidth] = useState(420);
+  const workspace = useWorkspace();
+  const { theme, setTheme, isDark, toggleTheme } = useTheme();
+  const busy = useStore(s => s.generationTask);
+  const hasData = useStore(s => !!s.dailyData);
+  const model = useStore(s => s.model);
+  const [mode, setMode] = useState<'screen' | 'read'>('screen');
+  const [split, setSplit] = useState(52);
+  const [dragging, setDragging] = useState(false);
+  const [readRequest, setReadRequest] = useState(0);
+  const main = useRef<HTMLDivElement>(null);
+  const chooseMode = (next: 'screen' | 'read') => { setMode(next); setSplit(next === 'screen' ? 52 : 32); };
+  const read = () => { chooseMode('read'); setReadRequest(value => value + 1); };
+  const browse = () => { chooseMode('screen'); document.getElementById('paper-search')?.focus(); };
+  const saveText = { local: '请导出保存', linked: '自动保存', saving: '正在保存…', saved: `已保存 ${workspace.savedAt}`, error: '保存失败' }[workspace.saveState];
 
-  useEffect(() => {
-    let cancelled = false;
-    loadInitialData().then((data) => {
-      // A slow startup fetch must not replace a workspace the user already opened.
-      if (!cancelled && data && !useStore.getState().dailyData) setDailyData(data);
-    });
-    return () => { cancelled = true; };
-  }, [setDailyData]);
-
-  const startResizeLeft = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = leftWidth;
-
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-
-    const onMove = (ev: PointerEvent) => {
-      const dx = ev.clientX - startX;
-      const next = startWidth + dx;
-      const min = 320;
-      const max = Math.max(min, window.innerWidth - 360);
-      setLeftWidth(Math.min(Math.max(next, min), max));
-    };
-
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  };
-
-  useEffect(() => {
-    let timer: number | null = null;
-    let writing = false;
-    let pending = false;
-
-    const buildWorkspacePayload = () => {
-      const state = useStore.getState();
-      const orderedConversations = state.conversationOrder.map((id) => state.conversations[id]).filter(Boolean);
-      return {
-        ...(state.dailyData || {}),
-        conversations: orderedConversations,
-        conversationOrder: orderedConversations.map((c) => c.id),
-        activeConversationId: state.activeConversationId,
-      };
-    };
-
-    const writeNow = async () => {
-      const handle = useStore.getState().workspaceFileHandle;
-      if (!handle) return;
-      if (typeof handle.createWritable !== 'function') return;
-      if (writing) {
-        pending = true;
-        return;
-      }
-
-      const payload = JSON.stringify(buildWorkspacePayload(), null, 2);
-      writing = true;
-      try {
-        const writable = await handle.createWritable();
-        await writable.write(payload);
-        await writable.close();
-      } catch (err) {
-        console.error('Failed to write workspace JSON:', err);
-      } finally {
-        writing = false;
-        if (pending) {
-          pending = false;
-          await writeNow();
-        }
-      }
-    };
-
-    const unsub = useStore.subscribe((state, prevState) => {
-      if (state.workspaceFileHandle !== prevState.workspaceFileHandle) {
-        if (timer) window.clearTimeout(timer);
-        pending = false;
-        return;
-      }
-      if (!state.workspaceFileHandle) return;
-      const changed =
-        state.dailyData !== prevState.dailyData ||
-        state.conversations !== prevState.conversations ||
-        state.conversationOrder !== prevState.conversationOrder ||
-        state.activeConversationId !== prevState.activeConversationId;
-      if (!changed) return;
-
-      if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        writeNow();
-      }, 800);
-    });
-
-    return () => {
-      unsub();
-      if (timer) window.clearTimeout(timer);
-    };
-  }, []);
-
-  const handleOpenWritableJson = async () => {
-    try {
-      const pickerWindow = window as FilePickerWindow;
-      const picker = pickerWindow.showOpenFilePicker;
-      if (typeof picker !== 'function') {
-        fileInputRef.current?.click();
-        return;
-      }
-
-      const [handle] = await picker.call(pickerWindow, {
-        multiple: false,
-        mode: 'readwrite',
-        types: [
-          {
-            description: 'JSON',
-            accept: { 'application/json': ['.json'] },
-          },
-        ],
-      });
-      if (!handle) return;
-      const file = await handle.getFile();
-      const text = await file.text();
-      const json: unknown = JSON.parse(text);
-      if (!hydrateWorkspace(json, handle)) {
-        alert('JSON 文件格式不匹配，请确保是 fetch_arxiv.py 生成的当日文件或网页导出的当日 JSON 文件。');
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json: unknown = JSON.parse(event.target?.result as string);
-        if (!hydrateWorkspace(json)) {
-          alert('JSON 文件格式不匹配，请确保是 fetch_arxiv.py 生成的当日文件或网页导出的当日 JSON 文件。');
-        }
-      } catch {
-        alert('解析 JSON 文件失败，请确保文件格式正确。');
-      }
-    };
-    reader.readAsText(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  return (
-    <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
-      {/* Left Sidebar */}
-      <motion.div 
-        initial={{ x: -20, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        className="h-full flex flex-col z-20"
-        style={{ width: leftWidth }}
-      >
-        {/* App Header */}
-        <div className="h-16 px-5 flex items-center justify-between bg-slate-950 border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="relative w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden shadow-lg">
-              <span className="text-slate-200 font-bold text-sm">R</span>
-              <img src="/raven.png" alt="RAVEN" className="absolute inset-0 w-full h-full object-contain" />
-            </div>
-            <div className="leading-tight">
-              <h1 className="font-semibold tracking-wide bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
-                RAVEN
-              </h1>
-              <div className="text-[10px] text-slate-500 font-mono tracking-wide">
-                Read ArxiV 4 mE Now
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-            <button
-              onClick={handleOpenWritableJson}
-              className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-slate-900 rounded-lg transition-colors"
-              title="加载本地 JSON 文件（支持实时写回：需浏览器授权）"
-            >
-              <FileUp size={18} />
-            </button>
-          </div>
-        </div>
-
-        <div className="px-5 py-2 bg-slate-900 border-b border-slate-800 flex items-center gap-3 shrink-0">
-          <span className="text-xs text-slate-500 font-mono">Model:</span>
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all font-mono"
-            placeholder="e.g. deepseek-v4-pro"
-            title="自由修改调用的模型名称 (如: deepseek-v4-pro, llama3 等)"
-          />
-        </div>
-
-        {/* Paper List */}
-        <div className="flex-1 overflow-hidden relative z-10">
-          <PaperList />
-        </div>
-      </motion.div>
-
-      <div
-        onPointerDown={startResizeLeft}
-        className="w-1 shrink-0 bg-slate-800/80 hover:bg-slate-700 cursor-col-resize"
-        title="拖动调整左右分栏宽度"
-      />
-
-      {/* Right Chat Panel */}
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
-        className="flex-1 h-full z-10"
-      >
-        <ChatPanel />
-      </motion.div>
-    </div>
-  );
+  return <div className={`app-shell mode-${mode}${dragging ? ' is-resizing' : ''}`}>
+    <a className="skip-link" href="#paper-search">跳到论文搜索</a><a className="skip-link" href="#research-reader">跳到精读区域</a>
+    <header className="app-header"><div className="brand"><span className="brand-mark"><Bird size={27} strokeWidth={1.5} /></span><span className="brand-name">RAVEN</span></div>
+      <nav className="workspace-modes" aria-label="工作模式"><button className={mode === 'screen' ? 'active' : ''} aria-pressed={mode === 'screen'} onClick={() => chooseMode('screen')}><LayoutList size={16} />筛选</button><button className={mode === 'read' ? 'active' : ''} aria-pressed={mode === 'read'} onClick={() => chooseMode('read')}><BookOpen size={16} />精读</button></nav>
+      <div className={`save-indicator${workspace.saveState === 'error' ? ' has-error' : ''}`} role="status" title={workspace.filename || '当前内容尚未关联本地可写文件'}><span className="save-dot" /><span>{saveText}</span>{workspace.saveState === 'error' && <button className="text-button" onClick={workspace.retrySave}>重试</button>}</div>
+      <div className="header-actions"><button className="button" disabled={!!busy} onClick={() => void workspace.open()}><FolderOpen size={16} /><span>打开工作区</span></button><button className="button" disabled={!hasData} onClick={() => { exportWorkspace(useStore.getState()); workspace.setNotice('已导出工作区，请在浏览器下载中确认。'); }}><Download size={16} /><span>导出</span></button><button className="icon-button theme-toggle" onClick={toggleTheme} aria-label={isDark ? '切换浅色主题' : '切换深色主题'} title={isDark ? '切换浅色主题' : '切换深色主题'}>{isDark ? <Sun size={18} /> : <Moon size={18} />}</button>
+        <details className="settings" onKeyDown={e => { if (e.key === 'Escape') e.currentTarget.open = false; }}><summary className="icon-button" aria-label="工作区设置" title="工作区设置"><Settings2 size={18} /></summary><div className="settings-panel"><h2>工作区设置</h2><label htmlFor="model-setting">模型名称</label><input id="model-setting" value={model} disabled={!!busy} onChange={e => useStore.getState().setModel(e.target.value)} placeholder="填写服务支持的模型名称" /><label htmlFor="theme-setting">外观</label><select id="theme-setting" value={theme} onChange={e => setTheme(e.target.value as 'light' | 'dark' | 'system')}><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select><button className="button" disabled={!!busy} onClick={workspace.importCopy}>导入 JSON 副本</button><button className="text-button" onClick={() => chooseMode(mode)}>重置分栏比例</button></div></details>
+      </div>
+    </header>
+    <input ref={workspace.fileInput} type="file" accept=".json,application/json" aria-label="导入 JSON 副本" className="sr-only" tabIndex={-1} onChange={e => { const file = e.target.files?.[0]; if (file) void workspace.importFile(file); e.target.value = ''; }} />
+    {workspace.notice && <div className="workspace-notice" role="status"><Info size={16} /><span>{workspace.notice}</span><button className="icon-button" aria-label="关闭工作区提示" onClick={() => workspace.setNotice('')}><X size={16} /></button></div>}
+    <main className="workspace-grid" ref={main} style={{ gridTemplateColumns: `${split}fr 8px ${100 - split}fr` }}>
+      <div className="library-pane"><PaperList onRead={read} loading={workspace.loading} error={workspace.loadError} onRetry={() => void workspace.load()} onOpen={() => void workspace.open()} /></div>
+      <div className="column-divider" role="separator" tabIndex={0} aria-label="调整论文库宽度" aria-orientation="vertical" aria-valuemin={28} aria-valuemax={70} aria-valuenow={Math.round(split)} aria-valuetext={`论文库占 ${Math.round(split)}%`} onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); setSplit(value => e.key === 'Home' ? 28 : e.key === 'End' ? 70 : Math.max(28, Math.min(70, value + (e.key === 'ArrowRight' ? 2 : -2)))); } }} onPointerDown={e => { if (e.button !== 0) return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); setDragging(true); }} onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; const bounds = main.current?.getBoundingClientRect(); if (bounds) setSplit(Math.max(28, Math.min(70, (e.clientX - bounds.left) / bounds.width * 100))); }} onPointerUp={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); setDragging(false); }} onPointerCancel={() => setDragging(false)} onLostPointerCapture={() => setDragging(false)} />
+      <div className="reader-pane" id="research-reader" tabIndex={-1}><ChatPanel onBrowse={browse} readRequest={readRequest} /></div>
+    </main>
+  </div>;
 }
-
 export default App;

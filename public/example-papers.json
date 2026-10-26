@@ -1,55 +1,63 @@
 {
-  "date": "2026-04-27",
+  "date": "2026-04-28",
   "total": 3,
   "subjects_counter": {
-    "astro-ph.IM": 2,
+    "astro-ph.EP": 1,
     "astro-ph.SR": 1,
-    "astro-ph.HE": 1
+    "astro-ph.GA": 1,
+    "astro-ph.HE": 2
   },
   "papers": [
     {
-      "title": "Gender equality activities in Astronomical Society of Japan",
+      "title": "Substructures Induced by Dust Drag in Protoplanetary Disks",
       "authors": [
-        "Aya Bamba (U. Tokyo)",
-        "Ayumi Asai (Kyoto U.)",
-        "Ryohko Ishikawa (NAOJ)",
-        "Masayoshi Nobukawa (Nara U. of Education)",
-        "Hideko Nomura (NAOJ)",
-        "Kosuke Sato (Saitama U.)",
-        "Hisanori Furusawa (NAOJ)",
-        "Mami Machida (Kyushu U.)",
-        "Sachiko Okumura (Japan Women's U.)"
+        "Jiaqing Bi",
+        "Mario Flock",
+        "Dominik Ostertag",
+        "Neele L\\\"uttkem\\\"oller",
+        "Sebastian Wolf"
       ],
-      "summary": "The female ratio in science field, including astronomy, is still quite low in Japan. We, the Astronomical Society of Japan, are making efforts to equalise the gender balance. In this paper, we summarise our statistics, member's thinking shown in our questionnaire, the history and accomplishments of the day-care system during annual meetings, and other activities.",
+      "summary": "Dust substructures observed in protoplanetary disks are commonly attributed to embedded planets; however, intrinsic gas-dust interactions can also generate complex morphologies. We performed two-dimensional, axisymmetric simulations of gas and dust that include dust back-reaction and parameterized turbulence to investigate how the streaming instability (SI) and vertical shear instability (VSI) shape dust distributions. With moderate viscosity and sufficiently high metallicity, we identify a characteristic shuttlecock-shaped dust substructure composed of a dense, vertically settled \"head\" and a vertically extended \"tail.\" This morphology arises from nonlinear SI driven by marginally coupled grains and the associated modification of gas flows. The dust scale height in the tail exceeds predictions based on the simple diffusion-settling balance, indicating strong self-generated turbulence. With lower viscosity, VSI becomes more vigorous, disrupts midplane structures, and increases vertical stirring; nevertheless, for dust grains with Stokes numbers around 0.01, SI can still attain dust-to-gas ratios of up to 20-50, potentially approaching the Hill density for gravitational binding. Our results demonstrate that intrinsic gas-dust interactions can generate prominent dust substructures even in disks with finite viscosity and, under favorable conditions, concentrate dust to levels relevant for planetesimal formation.",
       "categories": [
-        "astro-ph.IM"
+        "astro-ph.EP"
       ],
-      "url": "https://arxiv.org/abs/2604.21959"
+      "url": "https://arxiv.org/abs/2604.22912"
     },
     {
-      "title": "Verifying the STIS Time Dependent Sensitivity Trends with the Primary CALSPEC Standards",
+      "title": "The Effects of Accretion Feedback on Stellar Evolution in AGN Disks",
       "authors": [
-        "Daniel Stapleton",
-        "Svea Hernandez"
+        "Alexander J. Dittmann",
+        "Matteo Cantiello"
       ],
-      "summary": "The STIS team monitors the time dependent sensitivity (TDS) of each grating with one from a set of three secondary CALSPEC standard stars: GRW+70D5824, AGK+81D266, and BD+28D4211. Here, we use the three primary CALSPEC White Dwarf standard stars, dubbed the standard star \"triad\" (GD71, GD153, G191B2B), as an independent set of standards to verify the accuracy of STIS TDS corrections derived from the TDS monitoring stars, increasing the sample for each STIS L-mode from one up to three or four standard stars. We focus on triad star observations using the STIS L-mode gratings (e.g., G140L, G230L, etc.) with the same configuration as our standard TDS monitoring programs, and compare the triad observations to the TDS pipeline trends. Our analysis indicates the relative net count rates inferred from the triad standards agree with the TDS trends derived from the TDS monitoring stars with average residuals $<$ 2$\\%$ across the full wavelength range of STIS, suggesting our current TDS L-mode trends are reliable and robust. We note that the dispersion in the residuals does vary with wavelength, with the NUV showing the lowest spread ($\\pm$ 0.32$\\%$ at 2400-2500 Angstroms) and the NIR the largest ($\\pm$ 1.32$\\%$ at 9500-9900 Angstroms); however, this scatter is also seen in our measurements of the TDS monitoring stars and is more indicative of other instrumental effects. Our findings rule out long term deviations, such as variability in our TDS monitoring stars, within measurement uncertainties.",
+      "summary": "Stars embedded in the accretion disks of active galactic nuclei (AGN) can accrete rapidly from their surroundings, dramatically altering their structure and evolution. However, feedback from the release of gravitational potential energy and radiative enthalpy by accreting gas can limit accretion rates, as recently demonstrated in radiation hydrodynamics simulations. To determine the importance of these effects neglected in earlier stellar evolution calculations, we incorporate these feedback processes into a semi-analytical model of stellar structure and evolution and conduct a suite of calculations spanning a broad parameter space of AGN disk conditions drawn from $\\alpha$-disk models with central black hole masses $M_\\bullet/M_\\odot \\in [10^6, 10^9]$. We find that accretion feedback limits stellar accretion rates below $\\sim 10^{-1}\\,M_\\odot\\,\\mathrm{yr}^{-1}$, reducing the sensitivity of stellar evolution on disk properties. This suppression eliminates runaway accretion in models where it would otherwise occur, broadening the parameter space over which stars can reach long-lived ``immortal'' equilibria between accretion and mass loss. When gap opening is also accounted for, accretion feedback significantly alters stellar properties: it can reduce accretion and mass-loss rates by over an order of magnitude, reducing the strength of accretion shocks and thereby increasing equilibrium stellar masses and radii. These higher masses correspond to higher intrinsic luminosities, suggesting that neglecting accretion feedback may lead to an underestimate of disk chemical enrichment rates. Additionally, accretion feedback is important for predicting the properties of stellar populations within AGN disks, and associated transient phenomena.",
       "categories": [
-        "astro-ph.IM",
-        "astro-ph.SR"
+        "astro-ph.SR",
+        "astro-ph.GA",
+        "astro-ph.HE"
       ],
-      "url": "https://arxiv.org/abs/2604.21966"
+      "url": "https://arxiv.org/abs/2604.22913"
     },
     {
-      "title": "The Effects of Complex Accretion Disk Geometry on Broadened Iron K$\\alpha$ Lines",
+      "title": "IXPE Polarizations of the Lighthouse Pulsar, Trail, and Filament",
       "authors": [
-        "William Surgent",
-        "Daniel R. Wilkins"
+        "Jack T. Dinsmore",
+        "Roger W. Romani",
+        "S. Zhang",
+        "C. -Y. Ng",
+        "Stefano Silvestri",
+        "Oleg Kargaltsev",
+        "Niccolo' Bucciantini",
+        "Philip Kaaret",
+        "Josephine Wong",
+        "Patrick Slane",
+        "Paolo Soffitta",
+        "Martin C. Weisskopf"
       ],
-      "summary": "X-rays are emitted from the corona above the orbiting matter of the accretion disk and travel either directly to us or illuminate the disk. This illumination of the inner disk is enhanced by gravitational light bending, which focuses the rays towards the black hole and therefore towards the inner radii of the disk. These rays that hit the inner radii are reflected back to us, and we observe them in the X-ray reflection spectrum. In this work, we create novel general relativistic ray tracing simulations to investigate the effects of altering the geometry of the accretion disks of black holes on the most dominant part of the reflection spectrum, the iron K$\\alpha$ line. Work demonstrating the effect of disk geometry on the iron line has been performed, though many previous analyses have assumed a simplistic system, consisting of a point-source corona with a flat and infinitesimally thin accretion disk. We extend these models to more realistic accretion disk approximations. These include a constant aspect ratio disk, a radiation-pressure-dominated Shakura-Sunyaev disk, an expanded inner disk that has a non-negligible scale height in its inner regions due to radiation pressure, as well as various warped disks. Using measurement uncertainties from XRISM, we find that non-negligible thickness in accretion disks underestimates the black hole spin, corona height, and inclination angle if fitted with a flat disk model. The warped disk model could not be fit with the flat disk approximation.",
+      "summary": "The Lighthouse pulsar (PSR J1101$-$6101) sports a bright X-ray trail and filament. The synchrotron emission from both structures is expected to be polarized, with electric vector position angle (EVPA) perpendicular to the magnetic field direction and polarization degree (PD) indicating the local degree of magnetic turbulence. We present a 1 megasecond Imaging X-ray Polarimetry Explorer (IXPE) observation of the Lighthouse complex. At the 99% confidence level, we detect the filament polarization with PD $55 \\pm 18\\%$ and EVPA indicating a magnetic field parallel to the filament axis. The large PD implies a turbulent magnetic field weaker than the background field, in conflict with some existing models. We also detect polarization from the pulsar and trail. The trail's X-ray polarization is nearly orthogonal to the radio polarization, suggesting spatial separation between the X-ray- and radio-emitting leptons. The pulsar polarization is well-fit by the rotating vector model.",
       "categories": [
         "astro-ph.HE"
       ],
-      "url": "https://arxiv.org/abs/2604.21974"
+      "url": "https://arxiv.org/abs/2604.22914"
     }
   ]
 }

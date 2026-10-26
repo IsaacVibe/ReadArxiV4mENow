@@ -1,568 +1,88 @@
-import { useState, useMemo } from 'react';
-import { useStore, Paper } from '../store/useStore';
-import { Search, Tag, ExternalLink, Calendar, BookOpen, Bot, Loader2, CheckSquare, ListOrdered } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { callLLM } from '../utils/llm';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { ArrowRight, BookOpen, Check, ExternalLink, Loader2, Search, Square, X } from 'lucide-react';
+import { useStore, type Paper } from '../store/useStore';
+import { callLLM, isCancelled } from '../utils/llm';
+import { arxivId, pdfUrl } from '../utils/workspace';
 
-export function PaperList() {
-  const toPdfUrl = (url: string) => {
-    if (url.includes('/pdf/')) return url;
-    return url.replace('/abs/', '/pdf/');
-  };
-
-  const toArxivId = (url: string) => {
-    const m = url.match(/(\d{4}\.\d{5})(v\d+)?/);
-    return m ? m[1] : '';
-  };
-
-  const {
-    dailyData,
-    selectedPapers,
-    togglePaperSelection,
-    selectAllPapers,
-    conversations,
-    conversationOrder,
-    activeConversationId,
-    activateConversation,
-    apiKey,
-    baseUrl,
-    model,
-    updatePaperAiSummary
-  } = useStore();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isConversationOpen, setIsConversationOpen] = useState(false);
-  const [conversationSearchTerm, setConversationSearchTerm] = useState('');
-  const [paperLayout, setPaperLayout] = useState<'index' | 'subject'>('subject');
-  const [topHeight, setTopHeight] = useState(300);
-
-  const startResizeTop = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startHeight = topHeight;
-
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-
-    const onMove = (ev: PointerEvent) => {
-      const dy = ev.clientY - startY;
-      const next = startHeight + dy;
-      const min = 180;
-      const max = 520;
-      setTopHeight(Math.min(Math.max(next, min), max));
-    };
-
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  };
-
-  const availableCategories = useMemo(() => {
-    if (!dailyData) return [];
-    return Object.entries(dailyData.subjects_counter || {})
-      .sort((a, b) => b[1] - a[1])
-      .map(([category, count]) => ({ category, count }));
-  }, [dailyData]);
-
-  const paperIndexMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    if (!dailyData) return map;
-    dailyData.papers.forEach((p, idx) => {
-      map[p.url] = idx + 1;
-    });
-    return map;
-  }, [dailyData]);
-
-  const filteredPapers = useMemo(() => {
-    if (!dailyData) return [];
-    return dailyData.papers.filter((paper) => {
-      const searchLower = searchTerm.toLowerCase();
-      const matchesCategory =
-        selectedCategories.length === 0 ||
-        paper.categories.some((cat) => selectedCategories.includes(cat));
-      return (
-        matchesCategory &&
-        (
-          paper.title.toLowerCase().includes(searchLower) ||
-          paper.summary.toLowerCase().includes(searchLower) ||
-          paper.authors.some(a => a.toLowerCase().includes(searchLower))
-        )
-      );
-    });
-  }, [dailyData, searchTerm, selectedCategories]);
-
-  const groupedPapers = useMemo(() => {
-    const groups: Record<string, Paper[]> = {};
-    filteredPapers.forEach(paper => {
-      const mainCategory = paper.categories[0] || 'Unknown';
-      if (!groups[mainCategory]) {
-        groups[mainCategory] = [];
-      }
-      groups[mainCategory].push(paper);
-    });
-
-    return Object.keys(groups).sort().map(key => ({
-      category: key,
-      papers: groups[key]
-    }));
-  }, [filteredPapers]);
-
-  const toggleCategory = (category: string) => {
-    setSelectedCategories((prev) => {
-      if (prev.includes(category)) {
-        return prev.filter((c) => c !== category);
-      }
-      return [...prev, category];
-    });
-  };
-
-  const conversationsList = useMemo(() => {
-    return conversationOrder.map((id) => conversations[id]).filter(Boolean);
-  }, [conversationOrder, conversations]);
-
-  const filteredConversations = useMemo(() => {
-    const q = conversationSearchTerm.trim().toLowerCase();
-    if (!q) return conversationsList;
-    return conversationsList.filter((c) => {
-      if (c.title.toLowerCase().includes(q)) return true;
-      return c.paperUrls.some((u) => u.toLowerCase().includes(q));
-    });
-  }, [conversationSearchTerm, conversationsList]);
-
-  const paperConversationIds = useMemo(() => {
-    const map: Record<string, string[]> = {};
-    conversationsList.forEach((c) => {
-      c.paperUrls.forEach((u) => {
-        if (!map[u]) map[u] = [];
-        map[u].push(c.id);
-      });
-    });
-    return map;
-  }, [conversationsList]);
-
-  const handleGenerateSummaries = async () => {
-    if (isGenerating || selectedPapers.length === 0) return;
-    setIsGenerating(true);
-
-
-    try {
-      for (const paper of selectedPapers) {
-        if (paper.aiSummary) continue; // Skip if already generated
-
-        let currentSummary = '';
-        const prompt = `请用一句简短的中文（或一个短语）总结这篇论文的核心内容。不要有多余的寒暄或解释。\n\n标题：${paper.title}\n摘要：${paper.summary}`;
-
-        try {
-          await callLLM(
-            [{ role: 'user', content: prompt }],
-            apiKey,
-            baseUrl,
-            model,
-            (chunk) => {
-              currentSummary += chunk;
-              updatePaperAiSummary(paper.url, currentSummary);
-            }
-          );
-        } catch (err) {
-          console.error('Failed to summarize paper', paper.title, err);
-          updatePaperAiSummary(paper.url, currentSummary + ' (总结生成失败)');
-        }
-      }
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  if (!dailyData) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-slate-500 space-y-4 p-8">
-        <BookOpen size={48} className="opacity-20 animate-pulse" />
-        <p className="text-sm font-mono tracking-widest uppercase">加载论文数据中...</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col h-full bg-slate-950 border-r border-slate-800">
-      <div
-        className="p-5 border-b border-slate-800 bg-slate-900/50 backdrop-blur-xl z-10 space-y-4 shrink-0 overflow-y-auto custom-scrollbar"
-        style={{ height: topHeight }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-slate-300">
-            <Calendar size={16} className="text-blue-400" />
-            <span className="text-sm font-mono font-medium">{dailyData.date}</span>
-          </div>
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700 text-xs font-mono text-slate-400">
-            <span className="text-emerald-400 font-bold">{dailyData.total}</span> 篇论文
-          </div>
-        </div>
-
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
-              type="text"
-              placeholder="搜索论文 (如: FRB)"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all placeholder:text-slate-600"
-            />
-          </div>
-          {searchTerm.trim() !== '' && filteredPapers.length > 0 && (
-            <button
-              onClick={() => selectAllPapers(filteredPapers)}
-              className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
-              title={`一键选取当前搜索到的 ${filteredPapers.length} 篇论文`}
-            >
-              <CheckSquare size={16} />
-              <span className="hidden xl:inline">全选搜索结果</span>
-            </button>
-          )}
-          <button
-            onClick={handleGenerateSummaries}
-            disabled={isGenerating || selectedPapers.length === 0}
-            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
-              isGenerating || selectedPapers.length === 0
-                ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
-                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'
-            }`}
-            title={selectedPapers.length === 0 ? "请先选中论文" : "使用 AI 为已选中的论文生成一句话总结"}
-          >
-            {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
-            <span>{isGenerating ? '生成中...' : `总结已选 (${selectedPapers.length})`}</span>
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 max-h-20 overflow-y-auto custom-scrollbar pr-1">
-          <div className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950 p-0.5">
-            <button
-              onClick={() => setPaperLayout('index')}
-              className={`text-[11px] px-2.5 py-1 rounded-md transition-colors font-mono flex items-center gap-1 ${
-                paperLayout === 'index'
-                  ? 'bg-blue-500/10 text-blue-300'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="按序号浏览"
-            >
-              <ListOrdered size={12} />
-              按序号
-            </button>
-            <button
-              onClick={() => setPaperLayout('subject')}
-              className={`text-[11px] px-2.5 py-1 rounded-md transition-colors font-mono flex items-center gap-1 ${
-                paperLayout === 'subject'
-                  ? 'bg-emerald-500/10 text-emerald-300'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="按领域分组浏览"
-            >
-              <Tag size={12} />
-              按领域
-            </button>
-          </div>
-          <button
-            onClick={() => setSelectedCategories([])}
-            className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors font-mono ${
-              selectedCategories.length === 0
-                ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-            }`}
-            title="清空分类筛选"
-          >
-            全部
-          </button>
-          {availableCategories.map(({ category, count }) => {
-            const isActive = selectedCategories.includes(category);
-            return (
-              <button
-                key={category}
-                onClick={() => toggleCategory(category)}
-                className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors font-mono flex items-center gap-1 ${
-                  isActive
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                }`}
-                title={`筛选分类：${category}`}
-              >
-                <span>{category}</span>
-                <span className="text-[10px] opacity-70">({count})</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {conversationsList.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setIsConversationOpen(!isConversationOpen)}
-                className="text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors"
-              >
-                {isConversationOpen ? '隐藏会话' : `会话 (${conversationsList.length})`}
-              </button>
-              {isConversationOpen && (
-                <input
-                  type="text"
-                  value={conversationSearchTerm}
-                  onChange={(e) => setConversationSearchTerm(e.target.value)}
-                  placeholder="查找会话"
-                  className="w-36 bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-[11px] text-slate-300 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all font-mono placeholder:text-slate-600"
-                />
-              )}
-            </div>
-            {isConversationOpen && (
-              <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto custom-scrollbar pr-1">
-                {filteredConversations.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => activateConversation(c.id)}
-                    className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors font-mono ${
-                      c.id === activeConversationId
-                        ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                    }`}
-                    title={`进入会话：${c.title}`}
-                  >
-                    {c.title} <span className="opacity-70">({c.paperUrls.length})</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div
-        onPointerDown={startResizeTop}
-        className="h-1.5 shrink-0 bg-slate-800/80 hover:bg-slate-700 cursor-row-resize"
-        title="拖动调整左侧上下分区高度"
-      />
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {paperLayout === 'subject' ? (
-          groupedPapers.map((group) => (
-            <div key={group.category} className="space-y-3">
-              <div className="sticky top-0 z-10 flex items-center gap-2 bg-slate-950/90 backdrop-blur py-2 border-b border-slate-800/50">
-                <Tag size={14} className="text-blue-400" />
-                <h2 className="text-sm font-mono font-semibold text-slate-300">
-                  {group.category} <span className="text-slate-500 text-xs font-normal">({group.papers.length})</span>
-                </h2>
-              </div>
-
-              <div className="space-y-3">
-                {group.papers.map((paper, index) => {
-                  const isSelected = selectedPapers.some(p => p.url === paper.url);
-                  const convIds = paperConversationIds[paper.url] || [];
-                  const n = paperIndexMap[paper.url];
-                  const arxivId = toArxivId(paper.url);
-                  return (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: Math.min(index * 0.05, 0.5) }}
-                      key={paper.url}
-                      onClick={() => togglePaperSelection(paper)}
-                      className={`group cursor-pointer p-4 rounded-xl border transition-all duration-300 ${
-                        isSelected
-                          ? 'bg-slate-900 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.1)]'
-                          : 'bg-slate-900/40 border-slate-800/60 hover:bg-slate-900 hover:border-slate-700'
-                      }`}
-                    >
-                      <h3 className={`text-sm font-semibold leading-relaxed mb-2 line-clamp-2 ${isSelected ? 'text-blue-100' : 'text-slate-200 group-hover:text-blue-200 transition-colors'}`}>
-                        <span className="text-slate-500 font-mono font-medium mr-2">[{n ?? ''}]</span>
-                        {paper.title}
-                      </h3>
-
-                      <p className="text-xs text-slate-400 line-clamp-1 mb-1 font-mono">
-                        {paper.authors.join(', ')}
-                      </p>
-                      {arxivId && (
-                        <p className="text-[11px] text-slate-500 font-mono mb-3">
-                          arXiv:{arxivId}
-                        </p>
-                      )}
-
-                      {convIds.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mb-3">
-                          {convIds.map((cid) => {
-                            const c = conversations[cid];
-                            if (!c) return null;
-                            const isActive = cid === activeConversationId;
-                            return (
-                              <button
-                                key={cid}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  activateConversation(cid);
-                                }}
-                                className={`text-[10px] px-2 py-0.5 rounded border transition-colors font-mono ${
-                                  isActive
-                                    ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
-                                    : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-200 hover:border-slate-700'
-                                }`}
-                                title={`切换到会话：${c.title}`}
-                              >
-                                {c.title}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {paper.aiSummary && (
-                        <div className="mb-3 text-xs text-emerald-400 bg-emerald-400/10 p-2.5 rounded-lg border border-emerald-400/20 leading-relaxed font-medium">
-                          <span className="font-bold mr-1 opacity-80">AI 总结:</span>
-                          {paper.aiSummary}
-                        </div>
-                      )}
-
-                      <div className="flex items-center justify-between mt-auto">
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <div className="flex gap-1 overflow-hidden">
-                            {paper.categories.slice(0, 3).map((cat) => (
-                              <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400 whitespace-nowrap">
-                                {cat}
-                              </span>
-                            ))}
-                            {paper.categories.length > 3 && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-500">
-                                +{paper.categories.length - 3}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <a
-                          href={toPdfUrl(paper.url)}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-slate-500 hover:text-blue-400 transition-colors p-1"
-                          title="打开 PDF"
-                        >
-                          <ExternalLink size={14} />
-                        </a>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="space-y-3">
-            {filteredPapers.map((paper, index) => {
-              const isSelected = selectedPapers.some(p => p.url === paper.url);
-              const convIds = paperConversationIds[paper.url] || [];
-              const n = paperIndexMap[paper.url];
-              const arxivId = toArxivId(paper.url);
-              return (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(index * 0.03, 0.4) }}
-                  key={paper.url}
-                  onClick={() => togglePaperSelection(paper)}
-                  className={`group cursor-pointer p-4 rounded-xl border transition-all duration-300 ${
-                    isSelected
-                      ? 'bg-slate-900 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.1)]'
-                      : 'bg-slate-900/40 border-slate-800/60 hover:bg-slate-900 hover:border-slate-700'
-                  }`}
-                >
-                  <h3 className={`text-sm font-semibold leading-relaxed mb-2 line-clamp-2 ${isSelected ? 'text-blue-100' : 'text-slate-200 group-hover:text-blue-200 transition-colors'}`}>
-                    <span className="text-slate-500 font-mono font-medium mr-2">[{n ?? index + 1}]</span>
-                    {paper.title}
-                  </h3>
-
-                  <p className="text-xs text-slate-400 line-clamp-1 mb-1 font-mono">
-                    {paper.authors.join(', ')}
-                  </p>
-                  {arxivId && (
-                    <p className="text-[11px] text-slate-500 font-mono mb-3">
-                      arXiv:{arxivId}
-                    </p>
-                  )}
-
-                  {convIds.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mb-3">
-                      {convIds.map((cid) => {
-                        const c = conversations[cid];
-                        if (!c) return null;
-                        const isActive = cid === activeConversationId;
-                        return (
-                          <button
-                            key={cid}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              activateConversation(cid);
-                            }}
-                            className={`text-[10px] px-2 py-0.5 rounded border transition-colors font-mono ${
-                              isActive
-                                ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
-                                : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-200 hover:border-slate-700'
-                            }`}
-                            title={`切换到会话：${c.title}`}
-                          >
-                            {c.title}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {paper.aiSummary && (
-                    <div className="mb-3 text-xs text-emerald-400 bg-emerald-400/10 p-2.5 rounded-lg border border-emerald-400/20 leading-relaxed font-medium">
-                      <span className="font-bold mr-1 opacity-80">AI 总结:</span>
-                      {paper.aiSummary}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between mt-auto">
-                    <div className="flex items-center gap-2 overflow-hidden">
-                      <div className="flex gap-1 overflow-hidden">
-                        {paper.categories.slice(0, 3).map((cat) => (
-                          <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400 whitespace-nowrap">
-                            {cat}
-                          </span>
-                        ))}
-                        {paper.categories.length > 3 && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-500">
-                            +{paper.categories.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <a
-                      href={toPdfUrl(paper.url)}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-slate-500 hover:text-blue-400 transition-colors p-1"
-                      title="打开 PDF"
-                    >
-                      <ExternalLink size={14} />
-                    </a>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-        )}
-        {filteredPapers.length === 0 && (
-          <div className="text-center py-12 text-slate-500 text-sm font-mono">
-            未找到匹配的论文
-          </div>
-        )}
-      </div>
+const categoryNames: Record<string, string> = { 'astro-ph.CO': '宇宙学', 'astro-ph.GA': '星系', 'astro-ph.HE': '高能天体', 'astro-ph.IM': '仪器与方法', 'astro-ph.SR': '恒星', 'astro-ph.EP': '行星' };
+const PaperRow = memo(function PaperRow({ paper, number, selected, disabled, onRead }: { paper: Paper; number: number; selected: boolean; disabled: boolean; onRead: () => void }) {
+  const toggle = useStore(s => s.togglePaperSelection);
+  return <article className={`paper-row${selected ? ' is-selected' : ''}`}>
+    <label className="paper-check"><input type="checkbox" checked={selected} disabled={disabled} onChange={() => toggle(paper)} aria-label={`选择论文 ${number}：${paper.title}`} /><span aria-hidden="true">{selected ? <Check size={14} /> : null}</span></label>
+    <div className="paper-row-content">
+      <h3><button className="paper-title" disabled={disabled} onClick={onRead} title={paper.title}><span className="paper-number">{String(number).padStart(2, '0')}</span>{paper.title}</button></h3>
+      <p className="paper-authors" title={paper.authors.join(', ')}>{paper.authors.join(', ') || '作者信息未提供'}</p>
+      <div className="paper-meta"><span className="arxiv-id">{arxivId(paper.url)}</span><span className="paper-tags">{paper.categories.slice(0, 2).map(c => <span key={c}>{c}</span>)}{paper.categories.length > 2 && <span>+{paper.categories.length - 2}</span>}</span><a href={pdfUrl(paper.url)} target="_blank" rel="noreferrer" aria-label={`打开论文 ${number} 的 PDF`}>PDF <ExternalLink size={12} /></a></div>
+      {paper.aiSummary && <p className="paper-summary" title={paper.aiSummary}><span>摘要</span> {paper.aiSummary}</p>}
     </div>
-  );
+  </article>;
+});
+
+export function PaperList({ onRead, loading, error, onRetry, onOpen }: { onRead: () => void; loading: boolean; error: string; onRetry: () => void; onOpen: () => void }) {
+  const { papers, date, subjects, selected, busy } = useStore(useShallow(s => ({ papers: s.dailyData?.papers, date: s.dailyData?.date, subjects: s.dailyData?.subjects_counter, selected: s.selectedPapers, busy: s.generationTask })));
+  const [search, setSearch] = useState('');
+  const [categories, setCategories] = useState<string[]>([]);
+  const [layout, setLayout] = useState('index');
+  const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
+  const [batchError, setBatchError] = useState('');
+  const controller = useRef<AbortController>();
+  const revision = useStore(s => s.workspaceRevision);
+  useEffect(() => { setSearch(''); setCategories([]); setBatchError(''); }, [revision]);
+  useEffect(() => () => controller.current?.abort(), []);
+  const selectedUrls = useMemo(() => new Set(selected.map(p => p.url)), [selected]);
+  const indexes = useMemo(() => new Map(papers?.map((p, i) => [p.url, i + 1])), [papers]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (papers || []).filter(p => (!categories.length || p.categories.some(c => categories.includes(c))) && (!q || [p.title, p.summary, ...p.authors, arxivId(p.url)].some(value => value.toLowerCase().includes(q))));
+  }, [papers, categories, search]);
+  const groups = useMemo(() => {
+    if (layout === 'index') return [{ name: '', papers: filtered }];
+    const groups = new Map<string, Paper[]>();
+    filtered.forEach(p => { const key = p.categories[0] || '其他'; groups.set(key, [...(groups.get(key) || []), p]); });
+    return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([name, papers]) => ({ name, papers }));
+  }, [filtered, layout]);
+  const reset = () => { setSearch(''); setCategories([]); };
+  const generate = async () => {
+    const state = useStore.getState();
+    if (state.generationTask || !state.model.trim()) return;
+    const pending = state.selectedPapers.filter(p => !p.aiSummary || p.aiSummary.includes('总结生成失败'));
+    if (!pending.length) { setBatchError('所选论文已有一句话摘要，无需重复生成。'); return; }
+    controller.current = new AbortController();
+    state.setGenerationTask('正在生成一句话摘要'); setBatchError(''); setBatch({ done: 0, total: pending.length });
+    let failures = 0;
+    try {
+      for (const [index, paper] of pending.entries()) {
+        if (controller.current.signal.aborted) break;
+        let summary = '';
+        try {
+          await callLLM([{ role: 'user', content: `请用一句简短的中文总结这篇论文的核心内容，不要寒暄。\n标题：${paper.title}\n摘要：${paper.summary}` }], state.apiKey, state.baseUrl, state.model, chunk => { summary += chunk; }, controller.current.signal);
+          state.updatePaperAiSummary(paper.url, summary);
+        } catch (error) { if (isCancelled(error)) break; failures++; }
+        setBatch({ done: index + 1, total: pending.length });
+      }
+      if (failures) setBatchError(`${failures} 篇未完成。再次点击生成可重试失败项，已有摘要会保留。`);
+      else if (controller.current.signal.aborted) setBatchError('已停止。完成的摘要已保留，可继续生成剩余论文。');
+    } finally { setBatch(null); state.setGenerationTask(null); }
+  };
+
+  return <section className="paper-library" aria-label="论文库">
+    <div className="library-heading"><div><h1>论文库</h1>{date && <time>{date}</time>}</div><span className="count-label">{papers?.length || 0} 篇</span></div>
+    <div className="library-tools">
+      <div className="search-field"><Search size={17} /><input id="paper-search" type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索标题、作者、摘要或 arXiv ID" aria-label="搜索论文" />{search && <button className="icon-button" onClick={() => setSearch('')} aria-label="清除搜索"><X size={15} /></button>}</div>
+      {!!papers?.length && <>
+        <div className="category-filters" aria-label="按论文包含的领域筛选"><button className={`filter-chip${!categories.length ? ' active' : ''}`} aria-pressed={!categories.length} onClick={() => setCategories([])}>全部领域</button>{Object.entries(subjects || {}).sort(([a], [b]) => a.localeCompare(b)).map(([category, count]) => <button key={category} className={`filter-chip${categories.includes(category) ? ' active' : ''}`} title={`${category} · 含此领域 ${count} 篇`} aria-pressed={categories.includes(category)} onClick={() => setCategories(previous => previous.includes(category) ? previous.filter(c => c !== category) : [...previous, category])}>{categoryNames[category] || category}<span>{count}</span></button>)}</div>
+        <div className="list-toolbar"><p role="status">{(search.trim() || categories.length > 0) && `${filtered.length} / ${papers.length} 篇`}</p><div><button className="text-button" disabled={!filtered.length || !!busy} onClick={() => useStore.getState().selectAllPapers(filtered)}><Square size={13} />全选结果</button><label className="sr-only" htmlFor="list-layout">列表分组</label><select id="list-layout" value={layout} onChange={e => setLayout(e.target.value)}><option value="index">按序号</option><option value="subject">按主要领域</option></select></div></div>
+      </>}
+    </div>
+    {selected.length > 0 && <div className="selection-toolbar"><span><Check size={15} />已选 <strong>{selected.length}</strong> 篇</span><button className="text-button" disabled={!!busy} onClick={() => useStore.getState().clearSelectedPapers()}>清空</button><div className="selection-actions">{batch ? <button className="button button-subtle" onClick={() => controller.current?.abort()}><Loader2 size={14} className="spin" />{batch.done}/{batch.total} · 停止</button> : <button className="button button-subtle" disabled={!!busy || !useStore.getState().model.trim()} onClick={() => void generate()}>一句话摘要</button>}<button className="button button-primary" onClick={onRead}>进入精读<ArrowRight size={14} /></button></div></div>}
+    {batchError && <div className="inline-notice" role="status">{batchError}<button className="icon-button" aria-label="关闭摘要提示" onClick={() => setBatchError('')}><X size={14} /></button></div>}
+    <div className="paper-scroll" id="paper-results" tabIndex={0} aria-label="论文列表">
+      {loading && <div className="empty-state" role="status"><Loader2 size={26} className="spin" /><h2>正在载入论文</h2></div>}
+      {!loading && error && <div className="empty-state" role="alert"><BookOpen size={30} /><h2>暂时无法加载论文</h2><p>{error}</p><div><button className="button button-primary" onClick={onRetry}>重新加载</button><button className="button" onClick={onOpen}>打开本地文件</button></div></div>}
+      {!loading && !error && !papers?.length && <div className="empty-state"><BookOpen size={30} /><h2>这一天还没有论文</h2><button className="button" onClick={onOpen}>打开工作区</button></div>}
+      {!loading && !error && !!papers?.length && !filtered.length && <div className="empty-state"><Search size={30} /><h2>没有匹配的论文</h2><button className="button" onClick={reset}>清除搜索与筛选</button></div>}
+      {!loading && !error && groups.map(group => <div key={group.name}>{group.name && <h2 className="subject-heading">{categoryNames[group.name] || group.name}<span>{group.papers.length} 篇</span></h2>}{group.papers.map(paper => <PaperRow key={paper.url} paper={paper} number={indexes.get(paper.url) || 0} selected={selectedUrls.has(paper.url)} disabled={!!busy} onRead={() => { if (!selectedUrls.has(paper.url)) useStore.getState().togglePaperSelection(paper); onRead(); }} />)}</div>)}
+    </div>
+  </section>;
 }

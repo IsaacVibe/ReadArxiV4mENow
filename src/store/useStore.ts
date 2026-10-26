@@ -1,7 +1,41 @@
 import { create } from 'zustand';
+import { normalizeWorkspace } from '../utils/workspace';
+import type { ReadingSource } from '../utils/paperText';
 
-import { parseWorkspace, type Paper, type DailyData, type ChatMessage, type Conversation } from '../lib/workspace';
-export type { Paper, DailyData, ChatMessage, Conversation } from '../lib/workspace';
+export interface Paper {
+  title: string;
+  authors: string[];
+  summary: string;
+  categories: string[];
+  url: string;
+  aiSummary?: string;
+}
+
+export interface DailyData {
+  date: string;
+  total: number;
+  subjects_counter: Record<string, number>;
+  papers: Paper[];
+  dailySummary?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  isDailySummary?: boolean;
+  status?: 'interrupted';
+  sources?: ReadingSource[];
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  paperUrls: string[];
+  messages: ChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+}
 
 interface AppState {
   // Settings - Read directly from .env, completely fixed and read-only at runtime
@@ -12,11 +46,16 @@ interface AppState {
 
   // Workspace persistence
   workspaceFileHandle: FileSystemFileHandle | null;
+  setWorkspaceFileHandle: (handle: FileSystemFileHandle | null) => void;
 
   // Data
   dailyData: DailyData | null;
   setDailyData: (data: DailyData) => void;
-  hydrateWorkspace: (payload: unknown, handle?: FileSystemFileHandle | null) => boolean;
+  hydrateWorkspace: (payload: unknown) => void;
+  workspaceRevision: number;
+  generationTask: string | null;
+  setGenerationTask: (task: string | null) => void;
+  renameConversation: (id: string, title: string) => void;
   updateDailySummary: (summary: string) => void;
   updatePaperAiSummary: (url: string, aiSummary: string) => void;
   selectedPapers: Paper[];
@@ -33,6 +72,7 @@ interface AppState {
   addMessageToConversation: (conversationId: string, msg: ChatMessage) => void;
   appendToAssistantMessage: (conversationId: string, messageId: string, chunk: string) => void;
   clearConversationMessages: (conversationId: string) => void;
+  markMessageInterrupted: (conversationId: string, messageId: string) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -43,10 +83,20 @@ export const useStore = create<AppState>((set) => ({
   setModel: (model) => set({ model }),
 
   workspaceFileHandle: null,
+  setWorkspaceFileHandle: (handle) => set({ workspaceFileHandle: handle }),
 
   // Data
   dailyData: null,
-  setDailyData: (data) => set(() => ({
+  workspaceRevision: 0,
+  generationTask: null,
+  setGenerationTask: (generationTask) => set({ generationTask }),
+  renameConversation: (id, title) => set(state => {
+    const conversation = state.conversations[id];
+    if (!conversation || !title.trim()) return state;
+    return { conversations: { ...state.conversations, [id]: { ...conversation, title: title.trim(), updatedAt: Date.now() } } };
+  }),
+  setDailyData: (data) => set((state) => ({
+    workspaceRevision: state.workspaceRevision + 1,
     dailyData: data,
     selectedPapers: [],
     conversations: {},
@@ -54,17 +104,16 @@ export const useStore = create<AppState>((set) => ({
     activeConversationId: null,
     workspaceFileHandle: null,
   })),
-  hydrateWorkspace: (payload, handle = null) => {
-    const workspace = parseWorkspace(payload);
-    if (!workspace) return false;
-    const { conversations: items, conversationOrder, activeConversationId, ...dailyData } = workspace;
-    const conversations = Object.fromEntries(items.map((conversation) => [conversation.id, conversation]));
-    const selectedPapers = activeConversationId
-      ? dailyData.papers.filter((paper) => conversations[activeConversationId].paperUrls.includes(paper.url))
-      : [];
-    // Switch data and its write target together, so imports never write to the previous file.
-    set({ dailyData, conversations, conversationOrder, activeConversationId, selectedPapers, workspaceFileHandle: handle });
-    return true;
+  hydrateWorkspace: (payload) => {
+    const workspace = normalizeWorkspace(payload);
+    set(state => {
+      const conversations = Object.fromEntries(workspace.conversations.map(c => [c.id, c]));
+      const active = workspace.activeConversationId;
+      const selectedPapers = active ? conversations[active].paperUrls.map(url => workspace.papers.find(p => p.url === url)).filter((p): p is Paper => !!p) : [];
+      return { dailyData: workspace, conversations, conversationOrder: workspace.conversationOrder,
+        activeConversationId: active, selectedPapers, workspaceFileHandle: null,
+        workspaceRevision: state.workspaceRevision + 1 };
+    });
   },
   updateDailySummary: (summary) => set((state) => ({
     dailyData: state.dailyData ? { ...state.dailyData, dailySummary: summary } : null
@@ -115,10 +164,8 @@ export const useStore = create<AppState>((set) => ({
       }
 
       const nextIndex = state.conversationOrder.length + 1;
-      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      const suffix = nextIndex <= alphabet.length ? alphabet[nextIndex - 1] : `${nextIndex}`;
       const id = `ctx_${now}_${nextIndex}`;
-      const title = `上下文 ${suffix}`;
+      const title = `${state.selectedPapers.length > 1 ? '比较 · ' : ''}${state.selectedPapers[0].title.slice(0, 48)}`;
 
       const conv: Conversation = {
         id,
@@ -142,7 +189,7 @@ export const useStore = create<AppState>((set) => ({
   activateConversation: (conversationId) => set((state) => {
     const conv = state.conversations[conversationId];
     if (!conv || !state.dailyData) return state;
-    const selectedPapers = state.dailyData.papers.filter(p => conv.paperUrls.includes(p.url));
+    const selectedPapers = conv.paperUrls.map(url => state.dailyData?.papers.find(p => p.url === url)).filter((p): p is Paper => !!p);
     return { activeConversationId: conversationId, selectedPapers };
   }),
   addMessageToConversation: (conversationId, msg) => set((state) => {
@@ -163,5 +210,11 @@ export const useStore = create<AppState>((set) => ({
     if (!conv) return state;
     const updated: Conversation = { ...conv, messages: [], updatedAt: Date.now() };
     return { conversations: { ...state.conversations, [conversationId]: updated } };
+  }),
+  markMessageInterrupted: (id, messageId) => set(state => {
+    const conversation = state.conversations[id];
+    if (!conversation) return state;
+    return { conversations: { ...state.conversations, [id]: { ...conversation,
+      messages: conversation.messages.map(m => m.id === messageId ? { ...m, status: 'interrupted' as const } : m) } } };
   }),
 }));

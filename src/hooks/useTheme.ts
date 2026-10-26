@@ -1,29 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
-type Theme = 'light' | 'dark';
-
+type Theme = 'light' | 'dark' | 'system';
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => {
-    const savedTheme = localStorage.getItem('theme') as Theme;
-    if (savedTheme) {
-      return savedTheme;
-    }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    try { const value = localStorage.getItem('raven-theme'); return value === 'dark' || value === 'system' ? value : 'light'; }
+    catch { return 'light'; }
   });
-
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   useEffect(() => {
-    document.documentElement.classList.remove('light', 'dark');
-    document.documentElement.classList.add(theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
-  };
-
-  return {
-    theme,
-    toggleTheme,
-    isDark: theme === 'dark'
-  };
-} 
+    const query = window.matchMedia('(prefers-color-scheme: dark)');
+    const change = () => setSystemDark(query.matches);
+    query.addEventListener('change', change); return () => query.removeEventListener('change', change);
+  }, []);
+  const isDark = theme === 'dark' || (theme === 'system' && systemDark);
+  useEffect(() => {
+    document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+    try { localStorage.setItem('raven-theme', theme); } catch { /* Theme works without storage. */ }
+  }, [theme, isDark]);
+  return { theme, setTheme, isDark, toggleTheme: () => setTheme(isDark ? 'light' : 'dark') };
+}
