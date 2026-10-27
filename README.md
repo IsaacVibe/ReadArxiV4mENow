@@ -1,110 +1,62 @@
 # RAVEN — Read ArxiV 4 mE Now
 
-本地运行的 arXiv 天体物理论文阅读助手：Python 抓取公开论文，React 前端支持搜索、分类、多选、公式渲染和多轮 AI 对话。
+本地运行的 arXiv 天体物理论文阅读助手，支持每日论文筛选、AI 摘要与上下文精读。
 
-## 快速开始
+## 功能
 
-需要 Node.js 20.19+（或 22.12+）及 Python 3.9+。
+- 抓取最新 astro-ph 论文，按关键词、作者或领域筛选，多选阅读与比较。
+- 生成一句话摘要、今日亮点，进行多轮研究对话；支持 Markdown 和 LaTeX 公式。
+- 读取可用的 arXiv / ar5iv 网页原文，无需下载 PDF；原文不可用时明确仅依据摘要。
+- 自动保存 AI 摘要、亮点和对话到工作区 JSON，支持导入、导出与恢复。
+- 提供筛选／精读布局、可调分栏、浅色／深色主题，以及 80%–200% 整页缩放。
+
+## 安装
+
+需要 Node.js 20.19+（或 22.12+）和 Python 3.9+。
 
 ```bash
+git clone https://github.com/IsaacVibe/ReadArxiV4mENow.git
+cd ReadArxiV4mENow
 npm ci
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 cp env.example .env
+```
+
+在 `.env` 中配置兼容 OpenAI Chat Completions 的模型服务：
+
+```env
+VITE_LLM_BASE_URL=http://localhost:11434/v1
+VITE_LLM_MODEL=your-model-name
+VITE_LLM_API_KEY=
+```
+
+将地址和模型名改为实际服务支持的值；服务需允许浏览器跨域请求，本地免密服务可将密钥留空。修改配置后重启网页服务。`.env` 不进入 Git，但密钥会进入浏览器代码，因此仅用于个人本地运行，不要公开含真实密钥的构建产物。
+
+## 使用
+
+在项目目录运行：
+
+```bash
+source .venv/bin/activate
+python fetch_arxiv_list.py
 npm run dev
 ```
 
-打开终端显示的本地地址（默认 http://localhost:5173/）。未抓取数据时，页面展示 3 篇公开论文示例，不需要 API Key。
+打开终端显示的地址，默认 [http://localhost:5173/](http://localhost:5173/)。未抓取数据时会显示 3 篇公开论文示例。
 
-需要 AI 功能时，在本地 `.env` 中填写兼容 Chat Completions 的模型服务地址、模型名称和密钥。默认示例指向本地模型服务，密钥留空；服务需要允许浏览器跨域请求。修改 `.env` 后重启开发服务器。网页中可临时切换模型名称。
+1. 在左栏搜索、筛选并勾选论文，点击「一句话摘要」或「进入精读」。
+2. 点击「今日亮点」查看当日概览，或在精读区提问；通过会话下拉框切换对话。
+3. 使用顶栏 `Aa` 调整整页缩放，通过主题按钮切换外观。
 
-`.env` 不提交到 Git。`VITE_*` 配置会进入浏览器代码，因此真实密钥只用于个人本地运行；不要公开带有真实密钥的构建产物。
-
-## 抓取论文
-
-先安装 Python 依赖：
+每日数据位于 `public/archive/YYYYMM/`，包含 JSON 和 Markdown，`public/latest.json` 指向最新论文。已存在的当日文件会跳过抓取。其他抓取方式：
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
+python fetch_arxiv.py                              # RSS 抓取
+python fetch_arxiv_ids.py 2402.07716 2503.23047      # 指定 arXiv ID
 ```
 
-在项目根目录运行：
+默认加载的项目 JSON 会自动写回，一句话摘要、亮点和对话保存在 JSON 中，配套 Markdown 不同步。通过「打开工作区」关联的可写文件也会自动保存；示例数据和「导入 JSON 副本」请使用「导出」。下次打开同一 JSON 即可恢复记录，保存状态见顶栏。
 
-```bash
-# 从列表页抓取最新 astro-ph 论文，批量获取摘要
-python3 fetch_arxiv_list.py
-
-# 使用 RSS 抓取
-python3 fetch_arxiv.py
-
-# 按日期抓取：日期必须出现在 arXiv 的 pastweek 列表中
-python3 fetch_arxiv_list.py --date 20260928
-
-# 抓取指定论文
-python3 fetch_arxiv_ids.py 2402.07716 2503.23047
-```
-
-每日输出位于 `public/archive/YYYYMM/`，包含 `RAVEN_YYYYMMDD.json` 和 `astroph_YYYY-MM-DD.md`。`public/latest.json` 记录最新文件位置。指定 ID 的默认输出位于 `public/RAVEN_IDS_*.json`，可用 `--update-latest` 更新索引。JSON 可直接通过网页导入。
-
-如果同一天的新版或旧版 JSON/Markdown 已存在，每日抓取会跳过，保留手动编辑和已保存的对话。`--date` 不是任意历史日期查询；缺失日期不会生成数据。批量 API 请求失败或被限流时，缺失摘要会回退到逐篇 `/abs` 页面请求；也可用 `--no-api` 跳过批量 API。已有输出仍需自行保存并处理后才能重新抓取。
-
-证书验证默认开启，支持 `--ca-bundle` 或 `RAVEN_SSL_CA_BUNDLE` 指定证书。全部选项见各脚本的 `--help`。
-
-## 阅读与保存
-
-- 按关键词或分类筛选，按序号或主题浏览，选择多篇论文作为对话上下文。
-- 生成单篇简短摘要、每日亮点或所选论文概览；聊天支持 Markdown 和数学公式。
-- 使用筛选／精读两种布局，拖拽或用键盘调整左右分栏；从会话下拉框切换已保存的对话。支持浅色、深色及跟随系统。
-- 导出 JSON 保存论文、AI 摘要及对话；再次导入可继续阅读。
-- 支持文件读写 API 的浏览器可授权打开本地 JSON，后续修改约 800 ms 后写回该文件。其他浏览器使用上传导入和手动导出。
-
-启动加载顺序为：最新索引指向的数据 → 旧版 `public/papers.json` → `public/example-papers.json`。缺失、无效 JSON 或数据格式错误都会继续回退。
-
-## macOS 启动器
-
-完成依赖安装后，可以运行 `./start_app.sh`。脚本优先复用完整的今日数据，等待正在运行的抓取任务，缺失时调用 `automation/run_daily.sh` 尝试一次快速抓取，再同步索引并启动网页。可通过 `RAVEN_PYTHON` 指定解释器，未指定时优先使用项目 `.venv`。
-
-也可以在项目根目录编译启动器：
-
-```bash
-osacompile -o ArxivExplorer.app ArxivExplorer.applescript
-```
-
-将生成的 `.app` 保留在 `start_app.sh` 旁边，双击启动。路径由应用所在目录推导，不依赖个人目录。编译产物不提交到仓库。
-
-## 验证与版本管理
-
-```bash
-npm run check
-npm run lint
-npm test
-npm run build
-python3 -m unittest discover -s tests -p 'test_*.py'
-```
-
-仓库仅保留源码、锁文件、静态图片和最小公开示例。唯一允许跟踪的隐藏文件是根目录 `.gitignore`；其他隐藏文件、隐藏目录、抓取缓存、历史论文、个人对话、运行时索引及构建产物均留在本地。既有 Git 历史未被重写。
-
-提交时按文件选择，先检查暂存区，不使用 `git add -f` 绕过忽略规则。删除版本跟踪不等于清除 Git 历史；请始终确认新提交不含密钥或个人数据。
-
-## 可选自动抓取
-
-macOS 可手动运行 `bash automation/install.sh` 安装工作日 10:30 的 launchd 任务，先用 `--dry-run` 查看配置；触发时间跟随系统本地时区，建议设为 Asia/Shanghai。卸载使用 `bash automation/uninstall.sh`。首次启动可能需要 macOS 文件夹访问授权。安装脚本、缓存清理与迁移脚本均需用户主动运行，克隆和启动网页不会安装定时任务。Linux 可参考 `automation/crontab.example`。
-
-快捷指令可通过 `bash automation/build_shortcut.sh` 在本机生成，生成文件和 `.app` 不进入版本库。不要直接删除唯一保存的论文或对话；清理工具仅针对可再生成的缓存。
-
-## 桌面阅读工作台与网页原文
-
-网页提供「筛选 / 精读」两种布局，以及浅色、深色和跟随系统的外观设置。勾选论文后可生成一句话摘要，或进入精读与比较；会话可以改名，引用顺序在恢复会话后保持不变。
-
-- **保存**：通过本地 Vite 服务自动加载的当日 JSON（`latest.json` 指向的归档或 `papers.json`）会自动写回原文件；一句话摘要、今日亮点与对话均会保存，下次打开直接恢复。流式生成期间最多每 2 秒写回，生成结束立即保存，顶栏可查看保存状态和目标路径。不修改配套 Markdown。通过「打开工作区」选择其他 JSON 时，支持文件读写的浏览器也会自动写回。示例数据、纯静态部署或「导入 JSON 副本」需使用「导出」；写回失败会明确提示。检测到文件被其他页面或程序修改时会停止覆盖，先导出本页记录再重新打开。
-- **页面缩放**：顶栏 `Aa` 提供 80%–200% 整页缩放，文字、图标、按钮和间距同步调整，此浏览器会记住选择。窗口可用空间变窄时自动切换单栏，仍可通过「筛选 / 精读」切换。浏览器原生的 Command + `+` / `-` 也可照常使用。
-- **公式与行宽**：左右两栏的论文标题和一句话摘要均支持 LaTeX，兼容 `$...$`、`\(...\)` 等格式。模型未加公式标记的普通文字不做猜测式转换；新的一句话摘要会要求模型规范标记。精读内容基本占满右栏内宽，仅保留两侧留白，标题完整换行，避免长标题中的公式被截断。
-
-浏览器不支持文件写入时，「打开工作区」会尝试识别项目内未改动的同名每日归档，只有完整 JSON 匹配才关联原文件并自动保存；其他文件仍作为副本导入。明确选择「导入 JSON 副本」时不会关联原文件。
-- **原文**：研究问答会先请求本地 `/api/paper-text?id=...`，按顺序读取 arXiv、ar5iv 的 HTML 网页正文，将实际提取的文本、LaTeX 公式与图注传入模型。程序不请求 PDF、不下载图片，也不把原文保存到项目磁盘。
-- **来源可核对**：每次回答记录网页来源、取得时间、使用字符数及「网页正文 / 原文节选 / 仅摘要」。选篇较多或文章较长时，总正文预算约 120,000 字符，节选会明确标注；这不是所有模型上下文长度的保证。
-- **覆盖边界**：并非每篇文献都有可用的 HTML，网络也可能失败；此时明确仅依据摘要，不会把读取失败说成 arXiv 编号无效。HTML 转换可能遗漏图像或格式，图片解读仍需用户核对原文。模型的训练截止日期不用于过滤文献。
-- **运行要求**：HTML 读取中间件同时接入 `npm run dev` 和 `npm run preview`（Node.js），正常的一键启动器继续可用。仅把 `dist` 放在纯静态主机上不会提供该接口，需要部署等价的 Node 读取服务；否则页面会说明原文不可用。
-- **读取限制**：只允许规范 arXiv 编号和受限 HTTPS HTML 来源，拦截 PDF/其他地址跳转；内存缓存一小时、最大 24 篇，未开启批量后台抓取。
-
-核心回归可运行 `npm test`，类型检查与静态检查为 `npm run check`、`npm run lint`。本轮只验证改动涉及的核心桌面路径，不包含 50 轮长对话压力矩阵。
+macOS 可运行 `bash start_app.sh` 一键抓取并启动网页。需要工作日 10:30 自动抓取时，运行 `bash automation/install.sh`；首次按系统提示授权，时间跟随系统时区。卸载使用 `bash automation/uninstall.sh`。
