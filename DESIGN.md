@@ -61,7 +61,7 @@ typography:
     fontFamily: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Helvetica, Arial, sans-serif
     fontSize: 15px
     fontWeight: 600
-    lineHeight: 1.48
+    lineHeight: 1.55
   body:
     fontFamily: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Helvetica, Arial, sans-serif
     fontSize: 16px
@@ -255,12 +255,12 @@ The sidecar's eight-step tonal ramps are synthesized preview strips, not additio
 ### Hierarchy
 
 - **Workspace title:** the compact library heading; paired with the slightly smaller reader heading.
-- **Paper title:** two-line screening title, medium weight and a generous line height for mixed scientific notation. Supporting authors and identifiers use the label scale; numbers use tabular figures.
-- **Document title:** used for conversation and overview headings. Source titles use (1.15em), weight (600), line height (1.6), and wrap anywhere without the screening clamp.
-- **Body:** the reader defaults to the standard frontmatter body size, with the two larger sizes available through the reading control. Markdown line height is (1.75). User-question blocks remain (14px); source metadata remains (12px).
+- **Paper title:** fully wrapping screening title, medium weight and line height (1.55). Do not clamp away title formulas. Supporting authors and identifiers use the label scale; numbers use tabular figures. Screening titles, source titles and one-sentence summaries share the LaTeX renderer.
+- **Document title:** used for conversation and overview headings. Source titles use (1.15em), weight (600), line height (1.6), and wrap anywhere.
+- **Body:** the reader and user-question blocks default to the standard frontmatter body size. Markdown line height is (1.75); source metadata remains (12px). The header page-scale control scales the entire workspace from (80%) through (200%), including all text, icons, controls, spacing and formulas. It remembers its value in this browser; the old reader-only size control is removed.
 - **Label:** common metadata and toolbars; dense secondary badges use (11px), while filter counts and dates use (14px). Main button text uses its own frontmatter role. The RAVEN wordmark is (20px), weight (750), line height (1.2), letter spacing (.035em).
 
-Markdown headings scale relative to the selected reader size: h1 (1.6em), h2 (1.35em), h3 (1.15em), all weight (650) and line height (1.5). Heading margins are (1.7em 0 .7em); paragraphs use (.9em 0). Code is (.86em); code blocks use line height (1.65). Do not propagate the compact metadata size into reading prose.
+Markdown headings scale relative to body size: h1 (1.6em), h2 (1.35em), h3 (1.15em), all weight (650) and line height (1.5). Heading margins are (1.7em 0 .7em); paragraphs use (.9em 0). Code is (.86em); code blocks use line height (1.65). Do not propagate the compact metadata size into reading prose. The frontmatter body-large and body-largest samples are illustrative type sizes, not separate runtime controls.
 
 ## Layout
 
@@ -270,9 +270,9 @@ The application fills the dynamic viewport and keeps the header and composer out
 
 The screening mode starts with (52fr 8px 48fr) columns; reading mode starts with (32fr 8px 68fr). Changing mode restores that mode's starting split. The divider supports pointer resizing from (28%) to (70%) library share; keyboard arrows adjust by (2 percentage points), Home selects the minimum and End the maximum. The settings reset action reapplies the current mode's starting ratio.
 
-At widths up to (1200px), the header gap becomes (14px), its inline padding (18px), the brand subtitle disappears and the library/heading row gutters become (20px). At widths below (1100px), the exact media query is `max-width: 1099px`: one work surface is visible, the divider disappears, screening shows the library and reading shows the reader. The header can wrap. Selection and conversation state persist across the surface switch.
+At effective workspace widths up to (1200px), the header gap becomes (14px), its inline padding (18px) and the library/heading row gutters become (20px). At widths below (1100px), the exact container query is `max-width: 1099px`: one work surface is visible, the divider disappears, screening shows the library and reading shows the reader. Container queries account for both window resizing and the page-scale control. The header can wrap. Selection and conversation state persist across the surface switch.
 
-Reading documents have width (100%), a maximum of (76ch), centered margins and padding (28px 32px 40px). Narrow desktop uses a maximum of (80ch). Source entries separate with a (28px) margin and (26px) top padding plus a thin rule. Messages separate by (32px). This specification covers desktop and narrow desktop; it adds no mobile acceptance requirements.
+Reading documents have width (100%) with no centered line-width cap and padding (28px 24px 40px), so selected papers, summaries, highlights and conversations use the available pane width. The application compensates its viewport height for CSS zoom so the composer remains visible. Source entries separate with a (28px) margin and (26px) top padding plus a thin rule. Messages separate by (32px). This specification covers desktop and narrow desktop; it adds no mobile acceptance requirements.
 
 ## Elevation & Depth
 
@@ -321,11 +321,11 @@ Appearance is persisted as light, dark or system. System mode follows the OS pre
 ### Do:
 - Do bind component colors to the semantic CSS properties and swap the complete dark set together.
 - Do keep paper identity, reference numbering and state labels visible alongside color.
-- Do use the compact control scale and the separate adjustable document scale.
+- Do preserve the base text hierarchy while scaling the whole workspace together.
 - Do preserve keyboard focus, independent pane scrolling and reduced-motion behavior.
 
 ### Don't:
 - Don't introduce ornamental glass, gradients or decorative imagery into this workspace.
 - Don't turn paper rows into lifted cards or recolor selection as the primary action.
-- Don't clamp source titles or reading prose to the two-line screening-title limit.
+- Don't clamp paper titles or reading prose in a way that cuts off scientific formulas.
 - Don't treat the desktop documentation as a verified mobile specification.

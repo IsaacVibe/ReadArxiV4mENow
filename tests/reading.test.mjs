@@ -16,6 +16,7 @@ async function compile(name) {
 }
 const { callLLM } = await compile('llm');
 const { normalizeWorkspace } = await compile('workspace');
+const { loadServerWorkspace, saveServerWorkspace, findServerWorkspace } = await compile('workspacePersistence');
 const { arxivIdentifier, preparePapers, referenceDocuments } = await compile('paperText');
 const html = `<html><body><nav>navigation</nav><article class="ltx_document"><h1>Public fixture</h1><h2>Introduction</h2><p>${'Synthetic public test paragraph. '.repeat(60)}</p><h2>Results</h2><p><math alttext="E=mc^2">duplicate math</math></p><script>untrusted()</script></article></body></html>`;
 
@@ -76,4 +77,27 @@ test('legacy workspace objects preserve conversation order and provenance on imp
   assert.equal(workspace.conversations[0].messages[0].sources[0].chars, 2000);
   assert.equal(workspace.conversations[0].messages[0].status, 'interrupted');
   assert.throws(() => normalizeWorkspace({ papers: 'bad' }), /格式不匹配/);
+});
+test('server workspace client carries the current version across saves and surfaces write failures', async t => {
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push({ url, options });
+    if (options.method !== 'PUT') return new Response(JSON.stringify({ workspace: { date: '2099-01-01', papers: [] }, token: 'test-grant', version: 'v1' }));
+    if (options.body === 'fail') return new Response(JSON.stringify({ error: '文件已被其他页面修改' }), { status: 409 });
+    return new Response(JSON.stringify({ version: calls.length === 2 ? 'v2' : 'v3' }));
+  });
+  const { target } = await loadServerWorkspace('archive/209901/RAVEN_20990101.json', new AbortController().signal);
+  await saveServerWorkspace(target, '{}'); await saveServerWorkspace(target, '{}');
+  assert.equal(calls[1].options.headers['If-Match'], 'v1');
+  assert.equal(calls[2].options.headers['If-Match'], 'v2');
+  assert.equal(target.version, 'v3');
+  await assert.rejects(saveServerWorkspace(target, 'fail'), /其他页面修改/);
+  assert.equal(target.version, 'v3');
+});
+test('read-only file imports link project originals only when their entire JSON matches', async t => {
+  const workspace = { date: '2099-01-01', papers: [] };
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ workspace, token: 'test-grant', version: 'v1' })));
+  assert.equal((await findServerWorkspace('RAVEN_20990101.json', workspace)).path, 'archive/209901/RAVEN_20990101.json');
+  assert.equal(await findServerWorkspace('RAVEN_20990101.json', { ...workspace, dailySummary: 'external edits' }), null);
+  assert.equal(await findServerWorkspace('example-papers.json', workspace), null);
 });

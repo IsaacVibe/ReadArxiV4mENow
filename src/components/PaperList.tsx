@@ -4,6 +4,7 @@ import { ArrowRight, BookOpen, Check, ExternalLink, Loader2, Search, Square, X }
 import { useStore, type Paper } from '../store/useStore';
 import { callLLM, isCancelled } from '../utils/llm';
 import { arxivId, pdfUrl } from '../utils/workspace';
+import { InlineMarkdown } from './InlineMarkdown';
 
 const categoryNames: Record<string, string> = { 'astro-ph.CO': '宇宙学', 'astro-ph.GA': '星系', 'astro-ph.HE': '高能天体', 'astro-ph.IM': '仪器与方法', 'astro-ph.SR': '恒星', 'astro-ph.EP': '行星' };
 const PaperRow = memo(function PaperRow({ paper, number, selected, disabled, onRead }: { paper: Paper; number: number; selected: boolean; disabled: boolean; onRead: () => void }) {
@@ -11,10 +12,10 @@ const PaperRow = memo(function PaperRow({ paper, number, selected, disabled, onR
   return <article className={`paper-row${selected ? ' is-selected' : ''}`}>
     <label className="paper-check"><input type="checkbox" checked={selected} disabled={disabled} onChange={() => toggle(paper)} aria-label={`选择论文 ${number}：${paper.title}`} /><span aria-hidden="true">{selected ? <Check size={14} /> : null}</span></label>
     <div className="paper-row-content">
-      <h3><button className="paper-title" disabled={disabled} onClick={onRead} title={paper.title}><span className="paper-number">{String(number).padStart(2, '0')}</span>{paper.title}</button></h3>
+      <h3><button className="paper-title" disabled={disabled} onClick={onRead} title={paper.title}><span className="paper-number">{String(number).padStart(2, '0')}</span><InlineMarkdown>{paper.title}</InlineMarkdown></button></h3>
       <p className="paper-authors" title={paper.authors.join(', ')}>{paper.authors.join(', ') || '作者信息未提供'}</p>
       <div className="paper-meta"><span className="arxiv-id">{arxivId(paper.url)}</span><span className="paper-tags">{paper.categories.slice(0, 2).map(c => <span key={c}>{c}</span>)}{paper.categories.length > 2 && <span>+{paper.categories.length - 2}</span>}</span><a href={pdfUrl(paper.url)} target="_blank" rel="noreferrer" aria-label={`打开论文 ${number} 的 PDF`}>PDF <ExternalLink size={12} /></a></div>
-      {paper.aiSummary && <p className="paper-summary" title={paper.aiSummary}><span>摘要</span> {paper.aiSummary}</p>}
+      {paper.aiSummary && <p className="paper-summary" title={paper.aiSummary}><span className="paper-summary-label">摘要</span> <InlineMarkdown>{paper.aiSummary}</InlineMarkdown></p>}
     </div>
   </article>;
 });
@@ -56,7 +57,7 @@ export function PaperList({ onRead, loading, error, onRetry, onOpen }: { onRead:
         if (controller.current.signal.aborted) break;
         let summary = '';
         try {
-          await callLLM([{ role: 'user', content: `请用一句简短的中文总结这篇论文的核心内容，不要寒暄。\n标题：${paper.title}\n摘要：${paper.summary}` }], state.apiKey, state.baseUrl, state.model, chunk => { summary += chunk; }, controller.current.signal);
+          await callLLM([{ role: 'user', content: `请用一句简短的中文总结这篇论文的核心内容，不要寒暄。数学符号和公式必须使用 $...$ 包裹，不要裸写 LaTeX 命令，也不要使用代码块。\n标题：${paper.title}\n摘要：${paper.summary}` }], state.apiKey, state.baseUrl, state.model, chunk => { summary += chunk; }, controller.current.signal);
           state.updatePaperAiSummary(paper.url, summary);
         } catch (error) { if (isCancelled(error)) break; failures++; }
         setBatch({ done: index + 1, total: pending.length });
