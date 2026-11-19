@@ -1,6 +1,8 @@
 import type { Conversation, DailyData, Paper } from '../store/useStore';
 import type { ReadingSource } from './paperText';
 
+import { restorePicks } from './dailyPicks';
+
 export interface Workspace extends DailyData {
   conversations: Conversation[];
   conversationOrder: string[];
@@ -67,6 +69,7 @@ export function normalizeWorkspace(input: unknown): Workspace {
   return {
     date: payload.date, papers, total: papers.length, subjects_counter: subjects,
     ...(typeof payload.dailySummary === 'string' ? { dailySummary: payload.dailySummary } : {}),
+    ...(payload.dailyPicks != null ? { dailyPicks: restorePicks(payload.dailyPicks, papers) } : {}),
     conversations, conversationOrder: order,
     activeConversationId: typeof payload.activeConversationId === 'string' && ids.has(payload.activeConversationId) ? payload.activeConversationId : null,
   };

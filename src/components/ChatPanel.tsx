@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ExternalLink, FileText, Loader2, Messa
 import { useStore, type Paper } from '../store/useStore';
 import { callLLM, requestError, type LLMMessage } from '../utils/llm';
 import { arxivId, pdfUrl } from '../utils/workspace';
+import { fieldBudgets, parsePickReply, pickPrompt } from '../utils/dailyPicks';
 import { Markdown } from './Markdown';
 import { InlineMarkdown } from './InlineMarkdown';
 import { arxivIdentifier, preparePapers, referenceDocuments, type ReadingSource } from '../utils/paperText';
@@ -21,6 +22,7 @@ export function ChatPanel({ onBrowse, readRequest }: { onBrowse: () => void; rea
   const selected = useStore(s => s.selectedPapers);
   const allPapers = useStore(s => s.dailyData?.papers);
   const dailySummary = useStore(s => s.dailyData?.dailySummary);
+  const dailyPicks = useStore(s => s.dailyData?.dailyPicks);
   const activeId = useStore(s => s.activeConversationId);
   const conversation = useStore(s => s.activeConversationId ? s.conversations[s.activeConversationId] : null);
   const order = useStore(s => s.conversationOrder);
@@ -29,7 +31,7 @@ export function ChatPanel({ onBrowse, readRequest }: { onBrowse: () => void; rea
   const [view, setView] = useState<'sources' | 'chat' | 'daily'>('sources');
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
-  const [lastAttempt, setLastAttempt] = useState<{ kind: 'chat' | 'daily'; content: string } | null>(null);
+  const [lastAttempt, setLastAttempt] = useState<{ kind: 'chat' | 'daily' | 'picks'; content: string } | null>(null);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const [following, setFollowing] = useState(true);
@@ -83,20 +85,32 @@ export function ChatPanel({ onBrowse, readRequest }: { onBrowse: () => void; rea
       setLastAttempt({ kind: 'chat', content });
     } finally { state.setGenerationTask(null); }
   };
-  const generateDaily = async () => {
+  const generateDaily = async (picksOnly = false) => {
     const state = useStore.getState();
     if (!state.dailyData?.papers.length || state.generationTask || !state.model.trim()) return;
-    const token = start('正在整理今日研究概览'); setView('daily');
-    let summary = '';
+    const { papers } = state.dailyData;
+    const current = () => useStore.getState().workspaceRevision === state.workspaceRevision;
+    let picking = picksOnly;
+    const token = start(picking ? '正在评选各领域论文' : '正在整理今日研究概览'); setView('daily');
+    let summary = picksOnly ? state.dailyData.dailySummary || '' : '';
     try {
-      await callLLM([{ role: 'user', content: `你是专业天体物理研究助手。根据以下公开论文摘要，用中文概述各领域研究方向，选出3–5篇值得阅读的论文并说明理由。用对应的当日编号引用，不要声称已读取PDF全文。\n\n${state.dailyData.papers.map((p, i) => `[${i + 1}] ${p.title}\n领域：${p.categories.join(', ')}\n${p.url}\n${p.summary}`).join('\n\n')}` }], state.apiKey, state.baseUrl, state.model, chunk => { summary += chunk; state.updateDailySummary(summary); }, token.signal);
+      if (!picksOnly) await callLLM([{ role: 'user', content: `你是专业天体物理研究助手。根据以下公开论文摘要，用中文概述各领域研究方向，选出3–5篇值得阅读的论文并说明理由。用对应的当日编号引用，不要声称已读取PDF全文。\n\n${state.dailyData.papers.map((p, i) => `[${i + 1}] ${p.title}\n领域：${p.categories.join(', ')}\n${p.url}\n${p.summary}`).join('\n\n')}` }], state.apiKey, state.baseUrl, state.model, chunk => { summary += chunk; if (current()) state.updateDailySummary(summary); }, token.signal);
+      if (!current() || token.signal.aborted) return;
+      picking = true;
+      if (fieldBudgets(papers).some(f => f.limit > 0)) {
+        state.setGenerationTask('正在评选各领域论文');
+        let reply = '';
+        await callLLM([{ role: 'user', content: pickPrompt(papers, summary) }], state.apiKey, state.baseUrl, state.model, chunk => { reply += chunk; }, token.signal);
+        if (!current() || token.signal.aborted) return;
+        state.updateDailyPicks(parsePickReply(reply, papers));
+      } else state.updateDailyPicks({});
       setLastAttempt(null);
-    } catch (problem) { setError(requestError(problem)); setLastAttempt({ kind: 'daily', content: '' }); }
+    } catch (problem) { setError(requestError(problem)); setLastAttempt({ kind: picking ? 'picks' : 'daily', content: '' }); }
     finally { state.setGenerationTask(null); }
   };
   const readSelection = () => void runTurn('请逐篇精读所选论文，说明研究问题、方法、关键结论、局限与假设，并给出三个可继续追问的问题。引用固定会话编号；严格依据本次实际取得的网页正文或摘要，不要因训练截止日期质疑文献编号。');
   const send = () => { if (!input.trim() || busy || !selected.length || !model.trim()) return; const content = input.trim(); setInput(''); void runTurn(content); };
-  const retry = () => { if (lastAttempt?.kind === 'daily') void generateDaily(); else if (lastAttempt) void runTurn(lastAttempt.content, true); };
+  const retry = () => { if (lastAttempt?.kind === 'daily' || lastAttempt?.kind === 'picks') void generateDaily(lastAttempt.kind === 'picks'); else if (lastAttempt) void runTurn(lastAttempt.content, true); };
   const onScroll = () => { const el = scroll.current; if (!el || view !== 'chat') return; const next = el.scrollHeight - el.scrollTop - el.clientHeight < 80; follow.current = next; setFollowing(next); };
 
   return <section className="reader-panel" aria-label="论文精读与研究对话">
@@ -105,7 +119,7 @@ export function ChatPanel({ onBrowse, readRequest }: { onBrowse: () => void; rea
     <div className="conversation-toolbar"><label htmlFor="conversation-select">会话</label><select id="conversation-select" value={activeId || ''} disabled={!!busy} onChange={e => { if (e.target.value) useStore.getState().activateConversation(e.target.value); else useStore.getState().clearSelectedPapers(); }}><option value="">新的研究问题</option>{order.map(id => { const c = useStore.getState().conversations[id]; return c && <option key={id} value={id}>{c.title} · {c.paperUrls.length} 篇</option>; })}</select>{activeId && <button className="icon-button" aria-label="重命名当前会话" disabled={!!busy} onClick={() => { setTitle(conversation?.title || ''); setEditing(!editing); }}><Pencil size={14} /></button>}<button className="text-button" disabled={!!busy} onClick={() => { useStore.getState().clearSelectedPapers(); onBrowse(); }}><Plus size={14} />新问题</button></div>
     {editing && activeId && <form className="rename-form" onSubmit={e => { e.preventDefault(); useStore.getState().renameConversation(activeId, title); setEditing(false); }}><input aria-label="会话名称" value={title} onChange={e => setTitle(e.target.value)} maxLength={100} /><button className="button button-subtle" disabled={!title.trim()}>保存名称</button><button className="icon-button" type="button" onClick={() => setEditing(false)} aria-label="取消重命名"><X size={15} /></button></form>}
     <div className="reader-scroll" ref={scroll} onScroll={onScroll} tabIndex={0} aria-label="阅读内容区">
-      {view === 'daily' ? <div className="reading-document"><div className="document-heading"><span className="muted">仅据摘要</span><button className="text-button" disabled={!!busy || !allPapers?.length} onClick={() => void generateDaily()}>重新生成</button></div>{dailySummary ? <Markdown>{dailySummary}</Markdown> : <div className="empty-state"><Sparkles size={28} /><h3>{busy ? '正在生成概览' : '暂无概览'}</h3>{!busy && <button className="button button-primary" disabled={!allPapers?.length || !model.trim()} onClick={() => void generateDaily()}>生成今日概览</button>}</div>}</div>
+      {view === 'daily' ? <div className="reading-document"><div className="document-heading"><span className="muted">仅据摘要</span>{dailySummary && !dailyPicks && !busy && <button className="text-button" disabled={!model.trim()} onClick={() => void generateDaily(true)}>补选领域精选</button>}{dailyPicks && <span className="muted">{new Set(Object.values(dailyPicks).flat().map(p => p.url)).size} 篇领域精选</span>}<button className="text-button" disabled={!!busy || !allPapers?.length} onClick={() => void generateDaily()}>重新生成</button></div>{dailySummary ? <Markdown>{dailySummary}</Markdown> : <div className="empty-state"><Sparkles size={28} /><h3>{busy ? '正在生成概览' : '暂无概览'}</h3>{!busy && <button className="button button-primary" disabled={!allPapers?.length || !model.trim()} onClick={() => void generateDaily()}>生成今日概览</button>}</div>}</div>
       : view === 'sources' && selected.length ? <Sources papers={selected} allPapers={allPapers || []} busy={!!busy} sources={sources} />
       : view === 'chat' && !!messages?.length ? <div className="conversation-document"><div className="conversation-title"><MessageSquare size={18} /><h3>{conversation?.title}</h3></div>{messages.map(message => <article className={`message message-${message.role}`} key={message.id}><div className="message-label">{message.role === 'user' ? '你的问题' : 'RAVEN'}{message.status && <span>生成已中断</span>}</div>{message.content ? <Markdown>{message.content}</Markdown> : message.status ? <p className="muted">没有收到完整回答，可重试。</p> : <p className="muted">正在阅读上下文…</p>}{message.sources && <details className="answer-sources"><summary>本次回答的资料依据 · {message.sources.filter(source => source.status !== 'abstract').length}/{message.sources.length} 篇取得网页正文</summary><ul>{message.sources.map((source, index) => <li key={source.paperUrl}><span>[{index + 1}] {source.status === 'full' ? '网页正文' : source.status === 'partial' ? '原文节选' : '仅摘要'} · {source.chars.toLocaleString()} 字符</span><p>{source.note}</p>{source.sourceUrl && <a href={source.sourceUrl} target="_blank" rel="noreferrer">核对原文来源</a>}</li>)}</ul></details>}</article>)}</div>
       : <div className="reader-welcome"><h3>{selected.length ? '开始研究对话' : '选择论文开始阅读'}</h3><button className="button button-primary" onClick={selected.length ? readSelection : onBrowse} disabled={selected.length > 0 && (!!busy || !model.trim())}>{selected.length ? '精读已选论文' : '浏览论文库'}<ArrowUp size={15} /></button></div>}

@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { normalizeWorkspace } from '../utils/workspace';
 import type { ReadingSource } from '../utils/paperText';
 
+import type { DailyPicks } from '../utils/dailyPicks';
+
 export interface Paper {
   title: string;
   authors: string[];
@@ -17,6 +19,7 @@ export interface DailyData {
   subjects_counter: Record<string, number>;
   papers: Paper[];
   dailySummary?: string;
+  dailyPicks?: DailyPicks | null;
 }
 
 export interface ChatMessage {
@@ -57,6 +60,7 @@ interface AppState {
   setGenerationTask: (task: string | null) => void;
   renameConversation: (id: string, title: string) => void;
   updateDailySummary: (summary: string) => void;
+  updateDailyPicks: (picks: DailyPicks) => void;
   updatePaperAiSummary: (url: string, aiSummary: string) => void;
   selectedPapers: Paper[];
   togglePaperSelection: (paper: Paper) => void;
@@ -116,8 +120,9 @@ export const useStore = create<AppState>((set) => ({
     });
   },
   updateDailySummary: (summary) => set((state) => ({
-    dailyData: state.dailyData ? { ...state.dailyData, dailySummary: summary } : null
+    dailyData: state.dailyData ? { ...state.dailyData, dailySummary: summary, dailyPicks: null } : null
   })),
+  updateDailyPicks: (dailyPicks) => set(state => ({ dailyData: state.dailyData ? { ...state.dailyData, dailyPicks } : null })),
   updatePaperAiSummary: (url, aiSummary) => set((state) => {
     if (!state.dailyData) return state;
     const updatedPapers = state.dailyData.papers.map(p => p.url === url ? { ...p, aiSummary } : p);

@@ -9,6 +9,7 @@
   --ground: #f5f3f6; --surface: #ffffff; --surface-alt: #f0edf2; --reader: #faf9fb;
   --text: #2c2730; --muted: #645e69; --border: #ded8e1; --control-border: #8d858f;
   --primary: #924a63; --primary-hover: #7e3d54; --on-primary: #ffffff; --primary-soft: #f4e8ed;
+  --pick-bg: #fbf3f6; --pick-accent: #924a63; --pick-ink: #78364f;
   --sage: #42665c; --selected: #eaf2ee; --selected-border: #537a75;
   --reference: #365981; --reference-bg: #e5edf8; --focus: #4b70a2;
   --danger: #b92737; --danger-soft: #fcecef; --warning: #835b21; --warning-soft: #faf0dc;
@@ -18,6 +19,7 @@
   --ground: #1d1b22; --surface: #25212a; --surface-alt: #302b35; --reader: #211e26;
   --text: #eee8f0; --muted: #bdb3c1; --border: #48414f; --control-border: #8e8195;
   --primary: #dfa5bd; --primary-hover: #edbdd0; --on-primary: #2c1c25; --primary-soft: #3b2935;
+  --pick-bg: #352832; --pick-accent: #d995b2; --pick-ink: #f2c4d7;
   --sage: #accfc1; --selected: #293d36; --selected-border: #85b1a4;
   --reference: #b0ccf0; --reference-bg: #2b3850; --focus: #88abda;
   --danger: #ff9ba9; --danger-soft: #432830; --warning: #e7bd77; --warning-soft: #3d3326;
@@ -114,6 +116,12 @@ button svg, a svg { flex-shrink: 0; }
 .paper-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .paper-row { display: flex; align-items: flex-start; gap: 12px; padding: 16px 24px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .paper-row:hover { background: var(--reader); }
+.paper-row.is-featured { background: var(--pick-bg); box-shadow: inset 3px 0 var(--pick-accent); }
+.field-pick { margin-top: 6px; }
+.field-pick summary { display: inline-block; transition: none; color: var(--pick-ink); font-weight: 700; font-size: 12px; padding: 3px 0; border-radius: 2px; cursor: pointer; }
+.field-pick summary::after { content: ' ▸'; }
+.field-pick[open] summary::after { content: ' ▾'; }
+.field-pick p { color: var(--text); font-size: 13px; margin: 6px 0; }
 .paper-row.is-selected { background: var(--selected); }
 .paper-check { position: relative; flex-shrink: 0; width: 18px; height: 20px; margin-top: 2px; }
 .paper-check input { position: absolute; width: 18px; height: 18px; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }

@@ -12,10 +12,11 @@ after(() => rm(temporary, { recursive: true, force: true }));
 async function compile(name) {
   const source = await readFile(new URL(`../src/utils/${name}.ts`, import.meta.url), 'utf8');
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-  const file = join(temporary, `${name}.mjs`); await writeFile(file, output); return import(pathToFileURL(file).href);
+  const file = join(temporary, `${name}.mjs`); await writeFile(file, output.replace("'./dailyPicks'", "'./dailyPicks.mjs'")); return import(pathToFileURL(file).href);
 }
 const { callLLM } = await compile('llm');
-const { normalizeWorkspace } = await compile('workspace');
+const { fieldBudgets, parsePickReply } = await compile('dailyPicks');
+const { normalizeWorkspace, serializeWorkspace } = await compile('workspace');
 const { loadServerWorkspace, saveServerWorkspace, findServerWorkspace } = await compile('workspacePersistence');
 const { arxivIdentifier, preparePapers, referenceDocuments } = await compile('paperText');
 const html = `<html><body><nav>navigation</nav><article class="ltx_document"><h1>Public fixture</h1><h2>Introduction</h2><p>${'Synthetic public test paragraph. '.repeat(60)}</p><h2>Results</h2><p><math alttext="E=mc^2">duplicate math</math></p><script>untrusted()</script></article></body></html>`;
@@ -100,4 +101,20 @@ test('read-only file imports link project originals only when their entire JSON 
   assert.equal((await findServerWorkspace('RAVEN_20990101.json', workspace)).path, 'archive/209901/RAVEN_20990101.json');
   assert.equal(await findServerWorkspace('RAVEN_20990101.json', { ...workspace, dailySummary: 'external edits' }), null);
   assert.equal(await findServerWorkspace('example-papers.json', workspace), null);
+});
+
+test('daily field picks enforce local quotas and membership, preserve cross-list reasons and survive workspace round-trip', () => {
+  const papers = Array.from({length: 20}, (_, i) => ({title: `Paper ${i}`, url: `https://arxiv.org/abs/test${i}`, authors: [], summary: 'abstract', categories: ['A', ...(i < 5 ? ['B'] : []), ...(i < 3 ? ['C'] : [])]}));
+  assert.deepEqual(fieldBudgets(papers).map(f => f.limit), [4, 1, 0]);
+  const a = id => ({id, reason: `A reason ${id}`});
+  const model = {A: [1,1,2,3,4,5].map(a), B: [{id: 1, reason: 'B reason'}]};
+  const picks = parsePickReply('```json\n'+JSON.stringify(model)+'\n```', papers);
+  assert.deepEqual(picks.A.map(p => p.url), papers.slice(0,4).map(p => p.url));
+  assert.deepEqual(picks.B, [{url: papers[0].url, reason: 'B reason'}]);
+  for (const bad of [{A: []}, {...model,B: [a(9)]}, {...model,B: [a(50)]}]) assert.throws(() => parsePickReply(JSON.stringify(bad), papers));
+  assert.deepEqual(parsePickReply('{"A":[],"B":[]}', papers), {A:[],B:[]});
+  const dailyData = normalizeWorkspace({date:'2099-01-01', papers, dailySummary:'overview', dailyPicks:picks});
+  const saved = serializeWorkspace({dailyData, conversations:{}, conversationOrder:[], activeConversationId:null});
+  assert.deepEqual(normalizeWorkspace({...saved,papers:[...papers].reverse()}).dailyPicks,picks);
+  assert.equal(normalizeWorkspace({...saved,dailyPicks:{A:[]}}).dailyPicks,null);
 });
